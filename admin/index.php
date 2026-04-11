@@ -31,6 +31,22 @@ $p = (string) ($_GET['p'] ?? 'dashboard');
 $msg = '';
 $err = '';
 
+/** @param array<string, mixed> $config */
+function dn_admin_token_hint(SettingsRepository $r, array $config, string $dbKey, string $configKey): void
+{
+    $db = trim($r->get($dbKey));
+    $cf = trim((string) ($config[$configKey] ?? ''));
+    echo '<p class="hint">';
+    if ($db !== '') {
+        echo 'توکن در دیتابیس ذخیره است (۴ رقم آخر: <code dir="ltr">' . Util::e(substr($db, -4)) . '</code>). فیلد را خالی بگذارید تا تغییر نکند؛ برای تعویض، توکن کامل جدید را وارد کنید.';
+    } elseif ($cf !== '') {
+        echo 'فعلاً از <code dir="ltr">config.local.php</code> خوانده می‌شود (۴ رقم آخر: <code dir="ltr">' . Util::e(substr($cf, -4)) . '</code>). برای ذخیره در دیتابیس، توکن کامل را اینجا وارد و ذخیره کنید.';
+    } else {
+        echo 'توکن برای این پلتفرم تنظیم نشده.';
+    }
+    echo '</p>';
+}
+
 function admin_auth_ok(string $expect, string $got): bool
 {
     return hash_equals($expect, $got);
@@ -44,6 +60,10 @@ if ($p === 'logout') {
 }
 
 $logged = !empty($_SESSION['dn_admin']);
+if ($logged && !empty($_SESSION['dn_settings_saved'])) {
+    $msg = 'تنظیمات ذخیره شد.';
+    unset($_SESSION['dn_settings_saved']);
+}
 
 if (!$logged && $p !== 'login') {
     header('Location: index.php?p=login');
@@ -51,33 +71,53 @@ if (!$logged && $p !== 'login') {
 }
 
 if ($p === 'settings' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
+    $tab = (string) ($_POST['settings_tab'] ?? 'general');
+    if (!in_array($tab, ['telegram', 'bale', 'general'], true)) {
+        $tab = 'general';
+    }
     $pairs = [];
-    foreach (['telegram_bot_token', 'bale_bot_token', 'admin_web_password'] as $secretKey) {
-        $v = trim((string) ($_POST[$secretKey] ?? ''));
+    if ($tab === 'telegram') {
+        $v = trim((string) ($_POST['telegram_bot_token'] ?? ''));
         if ($v !== '') {
-            $pairs[$secretKey] = $v;
+            $pairs['telegram_bot_token'] = $v;
+        }
+    } elseif ($tab === 'bale') {
+        $v = trim((string) ($_POST['bale_bot_token'] ?? ''));
+        if ($v !== '') {
+            $pairs['bale_bot_token'] = $v;
+        }
+    } elseif ($tab === 'general') {
+        $v = trim((string) ($_POST['admin_web_password'] ?? ''));
+        if ($v !== '') {
+            $pairs['admin_web_password'] = $v;
         }
     }
-    $textKeys = [
-        'telegram_bot_username', 'bale_bot_username',
-        'referral_link_template_telegram', 'referral_link_template_bale',
-        'required_channel_username', 'required_channel_username_bale',
-        'channel_join_url_telegram', 'channel_join_url_bale',
-        'telegram_api_base', 'bale_api_base',
-        'admin_telegram_ids', 'admin_bale_ids',
-        'payment_card_number', 'payment_card_holder', 'pay_window_minutes',
-        'support_username', 'timezone', 'bot_brand_name', 'faq_text_key',
-        'help_text_key', 'help_links_raw',
-        'commands_setup_key', 'referral_percent_of_sale',
-        'locale_telegram', 'locale_bale',
+    $textByTab = [
+        'telegram' => [
+            'telegram_api_base', 'telegram_bot_username', 'referral_link_template_telegram',
+            'required_channel_username', 'channel_join_url_telegram',
+            'admin_telegram_ids', 'locale_telegram', 'support_username_telegram',
+        ],
+        'bale' => [
+            'bale_api_base', 'bale_bot_username', 'referral_link_template_bale',
+            'required_channel_username_bale', 'channel_join_url_bale',
+            'admin_bale_ids', 'locale_bale', 'support_username_bale',
+        ],
+        'general' => [
+            'payment_card_number', 'payment_card_holder', 'pay_window_minutes',
+            'support_username', 'timezone', 'bot_brand_name', 'help_text_key',
+            'commands_setup_key', 'referral_percent_of_sale',
+        ],
     ];
-    foreach ($textKeys as $k) {
+    foreach ($textByTab[$tab] ?? [] as $k) {
         $pairs[$k] = trim((string) ($_POST[$k] ?? ''));
     }
     $settingsRepo->setMany($pairs);
-    $msg = 'تنظیمات ذخیره شد.';
     $config = SettingsRepository::mergeIntoConfig(require dirname(__DIR__) . '/config.php', $settingsRepo->allFlat());
     $app['config'] = $config;
+    $_SESSION['dn_settings_saved'] = true;
+    header('Location: index.php?p=settings&tab=' . rawurlencode($tab));
+    exit;
 }
 
 if ($p === 'i18n' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_i18n'])) {
@@ -279,7 +319,7 @@ header('Content-Type: text/html; charset=utf-8');
     <a href="index.php?p=i18n" class="<?php echo $p === 'i18n' ? 'active' : ''; ?>">متن‌های ربات</a>
     <a href="index.php?p=logout" class="muted">خروج</a>
 </aside>
-<main class="main<?php echo $p === 'i18n' ? ' main--i18n' : ''; ?>">
+<main class="main<?php echo ($p === 'i18n' || $p === 'settings') ? ' main--i18n' : ''; ?>">
 <?php
 if ($msg !== '') {
     echo '<div class="flash ok">' . Util::e($msg) . '</div>';
@@ -305,43 +345,68 @@ if ($p === 'dashboard') {
 
 if ($p === 'settings') {
     $g = static fn (string $k, string $d = '') => Util::e($settingsRepo->get($k, $d));
-    echo '<h1>تنظیمات</h1><p class="hint">توکن‌ها و رمز پنل را فقط وقتی عوض می‌کنید پر کنید؛ خالی = همان مقدار قبلی می‌ماند. بقیه فیلدها با ذخیره همان‌طور که هست در دیتابیس ذخیره می‌شوند.</p>';
+    $st = (string) ($_GET['tab'] ?? 'telegram');
+    if (!in_array($st, ['telegram', 'bale', 'general'], true)) {
+        $st = 'telegram';
+    }
+    $helpKeyDisplay = $settingsRepo->get('help_text_key', $settingsRepo->get('faq_text_key', (string) ($config['help_text_key'] ?? 'help_body')));
+
+    echo '<h1>تنظیمات</h1>';
+    echo '<p class="hint">هر تب را جدا ذخیره کنید. توکن و رمز پنل: فقط هنگام تغییر پر کنید (خالی بماند = همان مقدار قبلی). بقیهٔ فیلدها مقدار فعلی را نشان می‌دهند و با ذخیره در دیتابیس ثبت می‌شوند.</p>';
+
+    echo '<nav class="i18n-tabs" aria-label="بخش تنظیمات">';
+    echo '<a href="index.php?p=settings&amp;tab=telegram" class="' . ($st === 'telegram' ? 'active' : '') . '">تلگرام</a>';
+    echo '<a href="index.php?p=settings&amp;tab=bale" class="' . ($st === 'bale' ? 'active' : '') . '">بله</a>';
+    echo '<a href="index.php?p=settings&amp;tab=general" class="' . ($st === 'general' ? 'active' : '') . '">عمومی</a>';
+    echo '</nav>';
+
     echo '<form method="post" class="form settings-form">';
     echo '<input type="hidden" name="save_settings" value="1">';
-    echo '<h3>ربات و API</h3>';
-    echo '<label>توکن تلگرام<input type="password" name="telegram_bot_token" autocomplete="off" placeholder="خالی = بدون تغییر در DB" dir="ltr"></label>';
-    echo '<label>توکن بله<input type="password" name="bale_bot_token" autocomplete="off" placeholder="خالی = بدون تغییر" dir="ltr"></label>';
-    echo '<div class="row2"><label>پایه API تلگرام<input name="telegram_api_base" dir="ltr" value="' . $g('telegram_api_base', (string) ($config['telegram_api_base'] ?? '')) . '"></label>';
-    echo '<label>پایه API بله<input name="bale_api_base" dir="ltr" value="' . $g('bale_api_base', (string) ($config['bale_api_base'] ?? '')) . '"></label></div>';
-    echo '<div class="row2"><label>یوزرنیم ربات تلگرام (بدون @)<input name="telegram_bot_username" value="' . $g('telegram_bot_username', (string) ($config['telegram_bot_username'] ?? '')) . '"></label>';
-    echo '<label>یوزرنیم ربات بله (بدون @)<input name="bale_bot_username" value="' . $g('bale_bot_username', (string) ($config['bale_bot_username'] ?? '')) . '"></label></div>';
-    echo '<label>قالب لینک معرفی تلگرام — <code dir="ltr">{id}</code> و <code dir="ltr">{bot}</code><textarea name="referral_link_template_telegram" rows="2" dir="ltr" placeholder="https://t.me/{bot}?start=ref_{id}">' . $g('referral_link_template_telegram') . '</textarea></label>';
-    echo '<label>قالب لینک معرفی بله<textarea name="referral_link_template_bale" rows="2" dir="ltr" placeholder="https://ble.ir/{bot}?start=ref_{id}">' . $g('referral_link_template_bale') . '</textarea></label>';
-    echo '<h3>ادمین و کانال</h3>';
-    echo '<label>آیدی عددی ادمین‌های تلگرام (با کاما)<input name="admin_telegram_ids" dir="ltr" value="' . $g('admin_telegram_ids') . '"></label>';
-    echo '<label>آیدی عددی ادمین‌های بله (با کاما)<input name="admin_bale_ids" dir="ltr" value="' . $g('admin_bale_ids') . '"></label>';
-    echo '<div class="row2"><label>کانال اجباری تلگرام (بدون @)<input name="required_channel_username" value="' . $g('required_channel_username', (string) ($config['required_channel_username'] ?? '')) . '"></label>';
-    echo '<label>کانال اجباری بله<input name="required_channel_username_bale" value="' . $g('required_channel_username_bale') . '"></label></div>';
-    echo '<label>لینک عضویت تلگرام (اختیاری)<input name="channel_join_url_telegram" dir="ltr" value="' . $g('channel_join_url_telegram') . '"></label>';
-    echo '<label>لینک عضویت بله (اختیاری)<input name="channel_join_url_bale" dir="ltr" value="' . $g('channel_join_url_bale') . '"></label>';
-    echo '<h3>پرداخت و متن</h3>';
-    echo '<div class="row2"><label>شماره کارت<input name="payment_card_number" dir="ltr" value="' . $g('payment_card_number', (string) ($config['payment']['card_number'] ?? '')) . '"></label>';
-    echo '<label>صاحب کارت<input name="payment_card_holder" value="' . $g('payment_card_holder', (string) ($config['payment']['card_holder'] ?? '')) . '"></label></div>';
-    echo '<label>مدت پنجره پرداخت (دقیقه)<input type="number" name="pay_window_minutes" value="' . $g('pay_window_minutes', (string) (int) ($config['payment']['pay_window_minutes'] ?? 10)) . '"></label>';
-    echo '<label>پشتیبانی @username<input name="support_username" value="' . $g('support_username', (string) ($config['support_username'] ?? '')) . '"></label>';
-    echo '<div class="row2"><label>Timezone<input name="timezone" dir="ltr" value="' . $g('timezone', (string) ($config['timezone'] ?? 'Asia/Tehran')) . '"></label>';
-    echo '<label>نام برند روی کانفیگ<input name="bot_brand_name" value="' . $g('bot_brand_name', (string) ($config['bot_brand_name'] ?? '')) . '"></label></div>';
-    echo '<label>درصد پاداش معرفی<input type="text" name="referral_percent_of_sale" inputmode="decimal" value="' . $g('referral_percent_of_sale', (string) ($config['referral_percent_of_sale'] ?? 5)) . '"></label>';
-    echo '<div class="row2"><label>زبان تلگرام (فایل در lang/)<input name="locale_telegram" dir="ltr" value="' . $g('locale_telegram', (string) ($config['locale'] ?? 'fa')) . '"></label>';
-    echo '<label>زبان بله<input name="locale_bale" dir="ltr" value="' . $g('locale_bale', (string) ($config['locale_bale'] ?? 'fa_bale')) . '"></label></div>';
-    echo '<label>کلید متن قدیمی FAQ (سازگاری)<input name="faq_text_key" value="' . $g('faq_text_key', (string) ($config['faq_text_key'] ?? 'faq_body')) . '"></label>';
-    echo '<label>کلید متن «راهنما» در زبان (مثلاً help_body)<input name="help_text_key" value="' . $g('help_text_key', (string) ($config['help_text_key'] ?? 'help_body')) . '"></label>';
-    echo '<label>لینک‌های آموزشی راهنما — هر خط: <code dir="ltr">عنوان | https://...</code><textarea name="help_links_raw" rows="4" dir="ltr" style="text-align:left" placeholder="آموزش تلگرام | https://t.me/...">' . $g('help_links_raw', (string) ($config['help_links_raw'] ?? '')) . '</textarea></label>';
-    echo '<p class="hint">متن‌های ربات (تلگرام و بله) را از صفحهٔ <a href="index.php?p=i18n"><b>متن‌های ربات</b></a> ویرایش کنید — بدون JSON.</p>';
-    echo '<h3>پنل وب</h3>';
-    echo '<label>رمز پنل (فقط برای تغییر)<input type="password" name="admin_web_password" autocomplete="new-password"></label>';
-    echo '<label>کلید tools/set_commands.php<input name="commands_setup_key" dir="ltr" value="' . $g('commands_setup_key', (string) ($config['commands_setup_key'] ?? '')) . '"></label>';
-    echo '<button type="submit">ذخیرهٔ تنظیمات</button></form>';
+    echo '<input type="hidden" name="settings_tab" value="' . Util::e($st) . '">';
+
+    if ($st === 'telegram') {
+        echo '<h3>تلگرام</h3>';
+        echo '<label>توکن ربات تلگرام<input type="password" name="telegram_bot_token" autocomplete="off" placeholder="خالی = بدون تغییر" dir="ltr"></label>';
+        dn_admin_token_hint($settingsRepo, $config, 'telegram_bot_token', 'bot_token');
+        echo '<div class="row2"><label>پایه API تلگرام<input name="telegram_api_base" dir="ltr" value="' . $g('telegram_api_base', (string) ($config['telegram_api_base'] ?? '')) . '"></label></div>';
+        echo '<p class="hint">پیش‌فرض نمونه: <code dir="ltr">https://api.telegram.org</code></p>';
+        echo '<label>یوزرنیم ربات (بدون @)<input name="telegram_bot_username" value="' . $g('telegram_bot_username', (string) ($config['telegram_bot_username'] ?? '')) . '"></label>';
+        echo '<label>قالب لینک معرفی — <code dir="ltr">{id}</code> و <code dir="ltr">{bot}</code><textarea name="referral_link_template_telegram" rows="2" dir="ltr" placeholder="https://t.me/{bot}?start=ref_{id}">' . $g('referral_link_template_telegram') . '</textarea></label>';
+        echo '<label>کانال اجباری (بدون @)<input name="required_channel_username" value="' . $g('required_channel_username', (string) ($config['required_channel_username'] ?? '')) . '"></label>';
+        echo '<label>لینک عضویت کانال (اختیاری)<input name="channel_join_url_telegram" dir="ltr" value="' . $g('channel_join_url_telegram') . '"></label>';
+        echo '<label>آیدی عددی ادمین‌ها (با کاما)<input name="admin_telegram_ids" dir="ltr" value="' . $g('admin_telegram_ids') . '" placeholder="مثلاً اعلان رسید و تأیید شارژ"></label>';
+        echo '<label>پشتیبانی تلگرام @username<input name="support_username_telegram" value="' . $g('support_username_telegram', (string) ($config['support_username_telegram'] ?? '')) . '" placeholder="خالی = مقدار عمومی یا support_username"></label>';
+        echo '<label>زبان (فایل در lang/)<input name="locale_telegram" dir="ltr" value="' . $g('locale_telegram', (string) ($config['locale'] ?? 'fa')) . '"></label>';
+    } elseif ($st === 'bale') {
+        echo '<h3>بله</h3>';
+        echo '<label>توکن ربات بله<input type="password" name="bale_bot_token" autocomplete="off" placeholder="خالی = بدون تغییر" dir="ltr"></label>';
+        dn_admin_token_hint($settingsRepo, $config, 'bale_bot_token', 'bale_bot_token');
+        echo '<div class="row2"><label>پایه API بله<input name="bale_api_base" dir="ltr" value="' . $g('bale_api_base', (string) ($config['bale_api_base'] ?? '')) . '"></label></div>';
+        echo '<p class="hint">پیش‌فرض نمونه: <code dir="ltr">https://tapi.bale.ai</code></p>';
+        echo '<label>یوزرنیم ربات (بدون @)<input name="bale_bot_username" value="' . $g('bale_bot_username', (string) ($config['bale_bot_username'] ?? '')) . '"></label>';
+        echo '<label>قالب لینک معرفی<textarea name="referral_link_template_bale" rows="2" dir="ltr" placeholder="https://ble.ir/{bot}?start=ref_{id}">' . $g('referral_link_template_bale') . '</textarea></label>';
+        echo '<label>کانال اجباری بله<input name="required_channel_username_bale" value="' . $g('required_channel_username_bale') . '"></label>';
+        echo '<label>لینک عضویت بله (اختیاری)<input name="channel_join_url_bale" dir="ltr" value="' . $g('channel_join_url_bale') . '"></label>';
+        echo '<label>آیدی عددی ادمین‌های بله (با کاما)<input name="admin_bale_ids" dir="ltr" value="' . $g('admin_bale_ids') . '"></label>';
+        echo '<label>پشتیبانی بله @username<input name="support_username_bale" value="' . $g('support_username_bale', (string) ($config['support_username_bale'] ?? '')) . '" placeholder="خالی = مقدار عمومی"></label>';
+        echo '<label>زبان بله (فایل در lang/)<input name="locale_bale" dir="ltr" value="' . $g('locale_bale', (string) ($config['locale_bale'] ?? 'fa_bale')) . '"></label>';
+    } else {
+        echo '<h3>عمومی</h3>';
+        echo '<div class="row2"><label>شماره کارت<input name="payment_card_number" dir="ltr" value="' . $g('payment_card_number', (string) ($config['payment']['card_number'] ?? '')) . '"></label>';
+        echo '<label>صاحب کارت<input name="payment_card_holder" value="' . $g('payment_card_holder', (string) ($config['payment']['card_holder'] ?? '')) . '"></label></div>';
+        echo '<label>مدت پنجره پرداخت (دقیقه)<input type="number" name="pay_window_minutes" value="' . $g('pay_window_minutes', (string) (int) ($config['payment']['pay_window_minutes'] ?? 10)) . '"></label>';
+        echo '<p class="hint">پیش‌فرض عددی در config: <code>10</code> دقیقه در صورت خالی بودن.</p>';
+        echo '<label>پشتیبانی پیش‌فرض (هر دو پلتفرم اگر فیلد اختصاصی خالی باشد)<input name="support_username" value="' . $g('support_username', (string) ($config['support_username'] ?? '')) . '"></label>';
+        echo '<div class="row2"><label>Timezone<input name="timezone" dir="ltr" value="' . $g('timezone', (string) ($config['timezone'] ?? 'Asia/Tehran')) . '"></label>';
+        echo '<label>نام برند روی کانفیگ<input name="bot_brand_name" value="' . $g('bot_brand_name', (string) ($config['bot_brand_name'] ?? '')) . '"></label></div>';
+        echo '<label>درصد پاداش معرفی<input type="text" name="referral_percent_of_sale" inputmode="decimal" value="' . $g('referral_percent_of_sale', (string) ($config['referral_percent_of_sale'] ?? 5)) . '"></label>';
+        echo '<label>کلید متن راهنما در فایل زبان (برای <code dir="ltr">/help</code> و دکمه راهنما؛ مثلاً <code dir="ltr">help_body</code>)<input name="help_text_key" dir="ltr" value="' . Util::e($helpKeyDisplay) . '"></label>';
+        echo '<p class="hint">متن همان کلید را در صفحهٔ <a href="index.php?p=i18n">متن‌های ربات</a> (تب تلگرام / بله) ویرایش کنید. دستور <code dir="ltr">/faq</code> همان پاسخ را نشان می‌دهد.</p>';
+        echo '<label>رمز پنل وب (فقط برای تغییر)<input type="password" name="admin_web_password" autocomplete="new-password"></label>';
+        echo '<label>کلید tools/set_commands.php<input name="commands_setup_key" dir="ltr" value="' . $g('commands_setup_key', (string) ($config['commands_setup_key'] ?? '')) . '"></label>';
+    }
+
+    echo '<button type="submit">ذخیرهٔ این بخش</button></form>';
 }
 
 if ($p === 'plans') {

@@ -31,6 +31,9 @@ return array_replace_recursive(
             'pay_window_minutes' => 10,
         ],
         'support_username' => '',
+        /** Optional @username for support text; falls back to support_username. */
+        'support_username_telegram' => '',
+        'support_username_bale' => '',
         /** Telegram @username of channel users must join (no @ prefix ok). Empty = no gate. */
         'required_channel_username' => '',
         /** Bale channel @username for membership gate (separate from Telegram). */
@@ -47,11 +50,10 @@ return array_replace_recursive(
         'bale_bot_username' => '',
         /** Percent of referred user's standard purchase (floor) credited to referrer wallet */
         'referral_percent_of_sale' => 5,
+        /** Legacy; used only if help_text_key is empty (config.local or old DB). */
         'faq_text_key' => 'faq_body',
-        /** I18n key for /help and «راهنما» (falls back to faq_text_key then help_body). */
+        /** I18n key for /help, /faq and «راهنما» (content is edited in متن‌های ربات). */
         'help_text_key' => 'help_body',
-        /** Multiline "عنوان|https://..." tutorial links appended in Help. */
-        'help_links_raw' => '',
         /** Shown in default config URL fragment (#remark) */
         'bot_brand_name' => 'DonutNetBot',
         /** PHP timezone for “end of day” test access */

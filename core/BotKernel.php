@@ -383,13 +383,13 @@ final class BotKernel
             return;
         }
 
-        if ($state === 'awaiting_gb_buy') {
-            $this->onAwaitingGbBuy($telegramId, $chatId, $text);
-
+        if ($this->routeUserReplyKeyboard($telegramId, $chatId, $text)) {
             return;
         }
 
-        if ($this->routeUserReplyKeyboard($telegramId, $chatId, $text)) {
+        if ($state === 'awaiting_gb_buy') {
+            $this->onAwaitingGbBuy($telegramId, $chatId, $text);
+
             return;
         }
 
@@ -422,6 +422,7 @@ final class BotKernel
             return true;
         }
         if ($text === I18n::txt('rk_wallet')) {
+            $this->states->clear($this->platform, $telegramId);
             $this->renderWalletScreen($telegramId, $chatId);
 
             return true;
@@ -501,7 +502,7 @@ final class BotKernel
             'wallet' => $this->renderWalletScreen($telegramId, $chatId),
             'configs' => $this->renderMyConfigs($telegramId, $chatId),
             'support' => $this->renderSupport($telegramId, $chatId),
-            'faq', 'help' => $this->renderHelp($telegramId, $chatId),
+            'help', 'faq' => $this->renderHelp($telegramId, $chatId),
             'income' => $this->renderIncomeScreen($telegramId, $chatId),
             default => $this->sendPanel($telegramId, $chatId, I18n::txt('hub_home'), null, true),
         };
@@ -1356,9 +1357,27 @@ final class BotKernel
         );
     }
 
+    private function supportUsernameForPlatform(): string
+    {
+        if (BotPlatform::isBale($this->platform)) {
+            $u = (string) ($this->config['support_username_bale'] ?? '');
+            if ($u === '') {
+                $u = (string) ($this->config['support_username'] ?? '');
+            }
+
+            return ltrim($u, '@');
+        }
+        $u = (string) ($this->config['support_username_telegram'] ?? '');
+        if ($u === '') {
+            $u = (string) ($this->config['support_username'] ?? '');
+        }
+
+        return ltrim($u, '@');
+    }
+
     private function renderSupport(int $telegramId, int $chatId): void
     {
-        $u = ltrim((string) ($this->config['support_username'] ?? ''), '@');
+        $u = $this->supportUsernameForPlatform();
         $this->sendPanel(
             $telegramId,
             $chatId,
@@ -1371,28 +1390,7 @@ final class BotKernel
     private function renderHelp(int $telegramId, int $chatId): void
     {
         $k = (string) ($this->config['help_text_key'] ?? $this->config['faq_text_key'] ?? 'help_body');
-        $html = I18n::txt($k);
-        $raw = trim((string) ($this->config['help_links_raw'] ?? ''));
-        if ($raw !== '') {
-            $html .= "\n\n📚 <b>" . I18n::txt('help_links_title') . "</b>\n";
-            foreach (preg_split('/\R/u', $raw) ?: [] as $ln) {
-                $ln = trim((string) $ln);
-                if ($ln === '') {
-                    continue;
-                }
-                $parts = explode('|', $ln, 2);
-                if (count($parts) === 2) {
-                    $t = trim($parts[0]);
-                    $u = trim($parts[1]);
-                    if ($t !== '' && $u !== '') {
-                        $html .= '• <a href="' . Util::e($u) . '">' . Util::e($t) . "</a>\n";
-                    }
-                } else {
-                    $html .= '• ' . Util::e($ln) . "\n";
-                }
-            }
-        }
-        $this->sendPanel($telegramId, $chatId, $html, $this->inlineHome(), false);
+        $this->sendPanel($telegramId, $chatId, I18n::txt($k), $this->inlineHome(), false);
     }
 
     private function notifyReferrerNewJoin(int $referrerId, int $newUserId): void
@@ -1602,7 +1600,7 @@ final class BotKernel
 
     private function sendInvalid(int $chatId): void
     {
-        $u = ltrim((string) ($this->config['support_username'] ?? ''), '@');
+        $u = $this->supportUsernameForPlatform();
         $msg = I18n::txt('invalid_input') . "\n\n" . I18n::txt('invalid_use_commands');
         if ($u !== '') {
             $msg .= "\n\n" . I18n::fmt('invalid_chat_to_support', ['username' => Util::e($u)]);

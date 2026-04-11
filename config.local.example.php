@@ -25,6 +25,9 @@ return [
         'pay_window_minutes' => 10,
     ],
     'support_username' => 'your_support_username',
+    /* Optional: different @usernames per app; if omitted, support_username is used. */
+    'support_username_telegram' => '',
+    'support_username_bale' => '',
     /* e.g. donutnet — users must join before using the bot */
     'required_channel_username' => 'donutnet',
     /* Same handle as BotFather (no @) */

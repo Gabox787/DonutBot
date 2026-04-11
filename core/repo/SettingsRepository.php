@@ -108,6 +108,8 @@ final class SettingsRepository
         foreach (
             [
                 'support_username' => 'support_username',
+                'support_username_telegram' => 'support_username_telegram',
+                'support_username_bale' => 'support_username_bale',
                 'timezone' => 'timezone',
                 'bot_brand_name' => 'bot_brand_name',
                 'telegram_bot_username' => 'telegram_bot_username',
@@ -118,9 +120,6 @@ final class SettingsRepository
                 'channel_join_url_bale' => 'channel_join_url_bale',
                 'referral_link_template_telegram' => 'referral_link_template_telegram',
                 'referral_link_template_bale' => 'referral_link_template_bale',
-                'faq_text_key' => 'faq_text_key',
-                'help_text_key' => 'help_text_key',
-                'help_links_raw' => 'help_links_raw',
                 'admin_web_password' => 'admin_web_password',
                 'commands_setup_key' => 'commands_setup_key',
             ] as $dk => $ck
@@ -129,6 +128,13 @@ final class SettingsRepository
             if ($v !== '') {
                 $out[$ck] = $v;
             }
+        }
+        $helpKey = trim((string) ($db['help_text_key'] ?? ''));
+        if ($helpKey === '') {
+            $helpKey = trim((string) ($db['faq_text_key'] ?? ''));
+        }
+        if ($helpKey !== '') {
+            $out['help_text_key'] = $helpKey;
         }
         if (($v = trim((string) ($db['referral_percent_of_sale'] ?? ''))) !== '' && is_numeric($v)) {
             $out['referral_percent_of_sale'] = (float) $v;

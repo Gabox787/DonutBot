@@ -32,7 +32,7 @@ $commands = [
     ['command' => 'configs', 'description' => 'سفارش‌ها / کانفیگ‌ها'],
     ['command' => 'income', 'description' => 'کسب درآمد — معرفی'],
     ['command' => 'support', 'description' => 'پشتیبانی'],
-    ['command' => 'faq', 'description' => 'سوالات'],
+    ['command' => 'help', 'description' => 'راهنما'],
 ];
 
 $out = [];
