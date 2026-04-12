@@ -27,9 +27,9 @@ if ($key === '' || ($_GET['key'] ?? '') !== $key) {
 $commands = [
     ['command' => 'start', 'description' => 'خانه — منوی اصلی'],
     ['command' => 'buy', 'description' => 'خرید'],
-    ['command' => 'test', 'description' => 'تست'],
+    ['command' => 'test', 'description' => 'نمونهٔ آزمایشی محصول'],
     ['command' => 'wallet', 'description' => 'کیف پول'],
-    ['command' => 'configs', 'description' => 'سفارش‌ها / کانفیگ‌ها'],
+    ['command' => 'configs', 'description' => 'سفارش‌ها و تحویل‌ها'],
     ['command' => 'income', 'description' => 'کسب درآمد — معرفی'],
     ['command' => 'support', 'description' => 'پشتیبانی'],
     ['command' => 'help', 'description' => 'راهنما'],

@@ -12,17 +12,17 @@ final class OrderRepository
         \PDO $pdo,
         string $platform,
         int $userId,
-        int $planId,
+        int $productId,
         int $pricePaidToman,
         string $publicId,
         string $orderKind = 'standard',
-        ?int $gbOrdered = null,
+        ?int $qtyOrdered = null,
     ): int {
         $st = $pdo->prepare(
-            'INSERT INTO orders_config (platform, public_id, user_id, plan_id, price_paid_toman, payload, status, order_kind, gb_ordered)
+            'INSERT INTO orders_config (platform, public_id, user_id, product_id, price_paid_toman, payload, status, order_kind, qty_ordered)
              VALUES (?, ?, ?, ?, ?, NULL, \'pending\', ?, ?)'
         );
-        $st->execute([$platform, $publicId, $userId, $planId, $pricePaidToman, $orderKind, $gbOrdered]);
+        $st->execute([$platform, $publicId, $userId, $productId, $pricePaidToman, $orderKind, $qtyOrdered]);
 
         return (int) $pdo->lastInsertId();
     }
@@ -32,7 +32,7 @@ final class OrderRepository
         \PDO $pdo,
         string $platform,
         int $userId,
-        int $planId,
+        int $productId,
         int $pricePaidToman,
         string $publicId,
         string $payload,
@@ -41,12 +41,12 @@ final class OrderRepository
     ): int {
         $st = $pdo->prepare(
             "INSERT INTO orders_config (
-                platform, public_id, user_id, plan_id, price_paid_toman, payload, status,
-                order_kind, plan_config_id, test_expires_at, user_remark,
+                platform, public_id, user_id, product_id, price_paid_toman, payload, status,
+                order_kind, stock_item_id, test_expires_at, user_remark,
                 service_started_at, service_ends_at, access_status
             ) VALUES (?, ?, ?, ?, ?, ?, 'fulfilled', 'test', NULL, ?, ?, NULL, ?, 'active')"
         );
-        $st->execute([$platform, $publicId, $userId, $planId, $pricePaidToman, $payload, $testExpiresAt, $userRemark, $testExpiresAt]);
+        $st->execute([$platform, $publicId, $userId, $productId, $pricePaidToman, $payload, $testExpiresAt, $userRemark, $testExpiresAt]);
 
         return (int) $pdo->lastInsertId();
     }
@@ -55,7 +55,7 @@ final class OrderRepository
         \PDO $pdo,
         int $orderId,
         string $payload,
-        ?int $planConfigId,
+        ?int $stockItemId,
         ?string $testExpiresAt,
         ?string $userRemark,
         ?string $serviceStartedAt,
@@ -67,7 +67,7 @@ final class OrderRepository
             'UPDATE orders_config SET
                 payload = ?,
                 status = \'fulfilled\',
-                plan_config_id = ?,
+                stock_item_id = ?,
                 test_expires_at = ?,
                 user_remark = ?,
                 service_started_at = ?,
@@ -78,7 +78,7 @@ final class OrderRepository
         );
         $st->execute([
             $payload,
-            $planConfigId,
+            $stockItemId,
             $testExpiresAt,
             $userRemark,
             $serviceStartedAt,
@@ -90,14 +90,14 @@ final class OrderRepository
     }
 
     /** @return array<string, mixed>|null */
-    public function lockNextPendingForPlanPdo(\PDO $pdo, int $planId): ?array
+    public function lockNextPendingForProductPdo(\PDO $pdo, int $productId): ?array
     {
         $st = $pdo->prepare(
             'SELECT id, platform, user_id, public_id, order_kind, price_paid_toman FROM orders_config
-             WHERE plan_id = ? AND status = \'pending\' AND order_kind = \'standard\'
+             WHERE product_id = ? AND status = \'pending\' AND order_kind = \'standard\'
              ORDER BY id ASC LIMIT 1 FOR UPDATE'
         );
-        $st->execute([$planId]);
+        $st->execute([$productId]);
         $row = $st->fetch();
 
         return $row ?: null;
@@ -108,12 +108,12 @@ final class OrderRepository
     {
         $lim = max(1, min(50, $limit));
         $st = $this->pdo->prepare(
-            'SELECT o.id, o.public_id, o.payload, o.status, o.created_at, o.order_kind, o.gb_ordered,
+            'SELECT o.id, o.public_id, o.payload, o.status, o.created_at, o.order_kind, o.qty_ordered AS gb_ordered,
                     o.test_expires_at, o.user_remark, o.access_status, o.service_started_at, o.service_ends_at,
                     o.user_limit_snapshot,
-                    p.title, p.title_bale, p.description_bale, p.gb AS plan_gb, p.user_limit AS plan_user_limit, p.duration_days AS plan_duration_days
+                    p.title, p.title_bale, p.description_bale, p.base_qty AS plan_gb, p.user_limit AS plan_user_limit, p.duration_days AS plan_duration_days
              FROM orders_config o
-             JOIN plans p ON p.id = o.plan_id
+             JOIN products p ON p.id = o.product_id
              WHERE o.platform = ? AND o.user_id = ?
              ORDER BY o.id DESC
              LIMIT ' . $lim
@@ -127,9 +127,9 @@ final class OrderRepository
     public function findForUserByPublicId(string $platform, int $userId, string $publicId): ?array
     {
         $st = $this->pdo->prepare(
-            'SELECT o.*, p.title, p.title_bale, p.description_bale, p.gb AS plan_gb, p.user_limit AS plan_user_limit, p.duration_days AS plan_duration_days
+            'SELECT o.*, p.title, p.title_bale, p.description_bale, p.base_qty AS plan_gb, p.user_limit AS plan_user_limit, p.duration_days AS plan_duration_days
              FROM orders_config o
-             JOIN plans p ON p.id = o.plan_id
+             JOIN products p ON p.id = o.product_id
              WHERE o.platform = ? AND o.user_id = ? AND o.public_id = ? LIMIT 1'
         );
         $st->execute([$platform, $userId, $publicId]);
@@ -154,9 +154,9 @@ final class OrderRepository
     {
         $lim = max(1, min(500, $limit));
         $st = $this->pdo->query(
-            'SELECT o.*, p.title AS plan_title, p.title_bale AS plan_title_bale, p.gb AS plan_gb_ref
+            'SELECT o.*, p.title AS plan_title, p.title_bale AS plan_title_bale, p.base_qty AS plan_gb_ref
              FROM orders_config o
-             JOIN plans p ON p.id = o.plan_id
+             JOIN products p ON p.id = o.product_id
              WHERE o.status = \'fulfilled\' AND o.order_kind = \'standard\' AND o.access_status = \'active\'
              ORDER BY o.id DESC
              LIMIT ' . $lim
@@ -183,7 +183,7 @@ final class OrderRepository
         $st2 = $this->pdo->prepare(
             'SELECT o.*, p.title AS plan_title, p.title_bale AS plan_title_bale
              FROM orders_config o
-             JOIN plans p ON p.id = o.plan_id
+             JOIN products p ON p.id = o.product_id
              WHERE o.id = ? LIMIT 1'
         );
         $st2->execute([$orderId]);
@@ -197,9 +197,9 @@ final class OrderRepository
     {
         $lim = max(1, min(100, $limit));
         $st = $this->pdo->query(
-            'SELECT o.id, o.public_id, o.user_id, o.plan_id, o.price_paid_toman, o.created_at, o.platform, p.title
+            'SELECT o.id, o.public_id, o.user_id, o.product_id, o.price_paid_toman, o.created_at, o.platform, p.title
              FROM orders_config o
-             JOIN plans p ON p.id = o.plan_id
+             JOIN products p ON p.id = o.product_id
              WHERE o.status = \'pending\'
              ORDER BY o.id ASC
              LIMIT ' . $lim
@@ -216,7 +216,7 @@ final class OrderRepository
         $st = $this->pdo->query(
             'SELECT o.*, p.title AS plan_title
              FROM orders_config o
-             JOIN plans p ON p.id = o.plan_id
+             JOIN products p ON p.id = o.product_id
              ORDER BY o.id DESC
              LIMIT ' . $lim . ' OFFSET ' . $off
         );
@@ -240,7 +240,7 @@ final class OrderRepository
                 (SELECT COUNT(*) FROM orders_config WHERE status = \'fulfilled\') AS fulfilled,
                 (SELECT COUNT(*) FROM orders_config WHERE status = \'pending\') AS pending,
                 (SELECT COALESCE(SUM(price_paid_toman), 0) FROM orders_config WHERE status = \'fulfilled\') AS revenue,
-                (SELECT COUNT(*) FROM plan_configs WHERE status = \'available\') AS stock'
+                (SELECT COUNT(*) FROM product_stock WHERE status = \'available\') AS stock'
         )->fetch();
 
         return [
@@ -249,5 +249,61 @@ final class OrderRepository
             'revenue_toman' => (int) ($a['revenue'] ?? 0),
             'stock_available' => (int) ($a['stock'] ?? 0),
         ];
+    }
+
+    /**
+     * Fulfilled revenue grouped by calendar day (server TZ) for charts.
+     *
+     * @return list<array{day: string, revenue: int, orders: int}>
+     */
+    public function fulfilledStatsByDay(int $days = 14): array
+    {
+        $days = max(1, min(90, $days));
+        $st = $this->pdo->prepare(
+            'SELECT DATE(created_at) AS d, COALESCE(SUM(price_paid_toman), 0) AS revenue, COUNT(*) AS orders
+             FROM orders_config
+             WHERE status = \'fulfilled\' AND created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+             GROUP BY DATE(created_at)
+             ORDER BY d ASC'
+        );
+        $st->execute([$days]);
+
+        return $st->fetchAll() ?: [];
+    }
+
+    /** @return list<array{day: string, c: int}> */
+    public function newUsersByDay(int $days = 14): array
+    {
+        $days = max(1, min(90, $days));
+        $st = $this->pdo->prepare(
+            'SELECT DATE(created_at) AS d, COUNT(*) AS c
+             FROM users
+             WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+             GROUP BY DATE(created_at)
+             ORDER BY d ASC'
+        );
+        $st->execute([$days]);
+
+        return $st->fetchAll() ?: [];
+    }
+
+    /** Top products by fulfilled revenue (all time, capped). */
+    /** @return list<array{title: string, revenue: int, orders: int}> */
+    public function topProductsByRevenue(int $limit = 8): array
+    {
+        $lim = max(1, min(30, $limit));
+        $st = $this->pdo->query(
+            'SELECT p.title AS title,
+                    COALESCE(SUM(o.price_paid_toman), 0) AS revenue,
+                    COUNT(*) AS orders
+             FROM orders_config o
+             JOIN products p ON p.id = o.product_id
+             WHERE o.status = \'fulfilled\'
+             GROUP BY o.product_id, p.title
+             ORDER BY revenue DESC
+             LIMIT ' . $lim
+        );
+
+        return $st->fetchAll() ?: [];
     }
 }

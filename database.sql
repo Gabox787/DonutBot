@@ -1,4 +1,4 @@
--- DonutNetBot — MySQL 5.7+ / MariaDB (utf8mb4). Fresh install: v5 schema (Telegram + Bale, app_settings).
+-- TG Donut Bot — MySQL 5.7+ / MariaDB (utf8mb4). Fresh production install.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -34,41 +34,42 @@ CREATE TABLE IF NOT EXISTS states (
     PRIMARY KEY (platform, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS plans (
+CREATE TABLE IF NOT EXISTS products (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     slug VARCHAR(48) NOT NULL DEFAULT '',
     title VARCHAR(255) NOT NULL,
-    title_bale VARCHAR(255) NULL COMMENT 'Presentation title on Bale; NULL = use title',
+    title_bale VARCHAR(255) NULL COMMENT 'Bale presentation title; NULL = use title',
     description TEXT NULL,
-    description_bale TEXT NULL COMMENT 'Donut-themed copy for Bale',
-    gb INT UNSIGNED NOT NULL DEFAULT 0,
+    description_bale TEXT NULL,
+    base_qty INT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Pricing step size in qty_unit (e.g. 1 kg)',
+    qty_unit VARCHAR(16) NOT NULL DEFAULT 'kg' COMMENT 'Unit code: kg, g, piece, box, ...',
     price_toman BIGINT UNSIGNED NOT NULL DEFAULT 0,
     sort_order INT NOT NULL DEFAULT 0,
     is_featured TINYINT(1) NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
-    allow_custom_gb TINYINT(1) NOT NULL DEFAULT 0,
-    gb_min INT UNSIGNED NOT NULL DEFAULT 1,
-    gb_max INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0 = use gb column as max',
+    allow_custom_qty TINYINT(1) NOT NULL DEFAULT 0,
+    qty_min INT UNSIGNED NOT NULL DEFAULT 1,
+    qty_max INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0 = cap at base_qty',
     test_enabled TINYINT(1) NOT NULL DEFAULT 0,
     test_price_toman BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    test_config_url TEXT NULL COMMENT 'Static vless/vmess URL when test is on',
-    user_limit INT UNSIGNED NULL COMMENT 'NULL = unlimited concurrent users',
-    duration_days INT UNSIGNED NULL COMMENT 'NULL = unlimited period after activation',
-    config_template TEXT NULL,
+    test_sample_payload TEXT NULL COMMENT 'Sample delivery text or URL for trial orders',
+    user_limit INT UNSIGNED NULL COMMENT 'NULL = unlimited concurrent “slots” on this product',
+    duration_days INT UNSIGNED NULL COMMENT 'NULL = unlimited after fulfillment',
+    delivery_template TEXT NULL COMMENT 'Optional internal notes; stock lines deliver payloads',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_plans_slug (slug),
-    INDEX idx_plans_active_sort (is_active, sort_order)
+    UNIQUE KEY uq_products_slug (slug),
+    INDEX idx_products_active_sort (is_active, sort_order)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS plan_configs (
+CREATE TABLE IF NOT EXISTS product_stock (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    plan_id INT UNSIGNED NOT NULL,
-    payload TEXT NOT NULL,
+    product_id INT UNSIGNED NOT NULL,
+    payload TEXT NOT NULL COMMENT 'Per-unit delivery: tracking link, pickup code, URL, etc.',
     status ENUM('available','assigned') NOT NULL DEFAULT 'available',
     assigned_order_id BIGINT UNSIGNED NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_pc_plan_avail (plan_id, status),
-    CONSTRAINT fk_pc_plan FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+    INDEX idx_stock_product_avail (product_id, status),
+    CONSTRAINT fk_stock_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS orders_config (
@@ -76,13 +77,13 @@ CREATE TABLE IF NOT EXISTS orders_config (
     platform ENUM('telegram','bale') NOT NULL DEFAULT 'telegram',
     public_id CHAR(12) NOT NULL,
     user_id BIGINT UNSIGNED NOT NULL,
-    plan_id INT UNSIGNED NOT NULL,
+    product_id INT UNSIGNED NOT NULL,
     price_paid_toman BIGINT UNSIGNED NOT NULL,
     payload TEXT NULL,
     status ENUM('pending','fulfilled') NOT NULL DEFAULT 'pending',
-    plan_config_id BIGINT UNSIGNED NULL,
+    stock_item_id BIGINT UNSIGNED NULL,
     order_kind ENUM('standard','test') NOT NULL DEFAULT 'standard',
-    gb_ordered INT UNSIGNED NULL,
+    qty_ordered INT UNSIGNED NULL,
     user_remark VARCHAR(512) NULL,
     test_expires_at TIMESTAMP NULL DEFAULT NULL,
     access_status ENUM('active','inactive') NOT NULL DEFAULT 'active',
@@ -94,8 +95,8 @@ CREATE TABLE IF NOT EXISTS orders_config (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_order_public (public_id),
     INDEX idx_orders_user_plat (platform, user_id),
-    INDEX idx_orders_pending_plan (plan_id, status),
-    CONSTRAINT fk_orders_plan FOREIGN KEY (plan_id) REFERENCES plans(id)
+    INDEX idx_orders_pending_product (product_id, status),
+    CONSTRAINT fk_orders_product FOREIGN KEY (product_id) REFERENCES products(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS wallet_topups (
@@ -129,89 +130,71 @@ CREATE TABLE IF NOT EXISTS referral_payouts (
 
 SET FOREIGN_KEY_CHECKS = 1;
 
-INSERT INTO plans (
-    slug, title, title_bale, description, description_bale, gb, price_toman, sort_order, is_featured, is_active,
-    allow_custom_gb, gb_min, gb_max, test_enabled, test_price_toman, test_config_url, user_limit, duration_days, config_template
+INSERT INTO products (
+    slug, title, title_bale, description, description_bale, base_qty, qty_unit, price_toman, sort_order, is_featured, is_active,
+    allow_custom_qty, qty_min, qty_max, test_enabled, test_price_toman, test_sample_payload, user_limit, duration_days, delivery_template
 ) VALUES
 (
-    'economy',
-    '💸 پلن اقتصادی (Economy)',
-    '💸 پلن اقتصادی (Economy)',
-    '🚀 فروش ویژه سرویس‌های پرسرعت VPN 🚀\nبا بهترین کیفیت، مناسب هر نوع مصرف 👇\n\n💸 پلن اقتصادی (Economy)\n📌 حجم: 10 گیگ – مدت: 1 ماه\n📌 مناسب کارهای روزمره (تلگرام، واتساپ، وب‌گردی…)\n📌 سرعت معمولی و پایدار\n⚠️ دارای قطعی روزانه (حدود 2 ساعت)\n🌙 از ساعت 12 شب تا 8 صبح سرعت بسیار بهتر\n❌ بدون ضمانت بازگشت وجه',
-    '🍩 فروش ویژه دونات‌های خوشمزه و پرسرعت!\n\n💸 پلن اقتصادی (Economy)\n📌 مناسب خوردن روزمره (تلگرام، واتساپ، وب‌گردی و...)\n📌 طعم معمولی و پایدار\n📌 لذت < 500ms 🟠\n⚠️ گاهی دونات‌ها کمی از دسترس خارج میشن (حدود 2 ساعت)\n🌙 شب‌ها بین 12 تا 8 صبح خوشمزه‌تر و پرسرعت‌تر (مناسب دانلود و استریم)\n\n❌ ضمانت بازگشت وجه نداره\n💰 قیمت: 10 کیلو 850.000 تومان',
-    10,
-    850000,
+    'classic-dozen',
+    '🍩 کلاسیک — دونات شکلاتی (۱۲ عدد)',
+    '🍩 دونات کلاسیک',
+    'یک بستهٔ ۱۲تایی دونات تازه.\nارسال همان روز در تهران (مناطق ۱–۱۲).\nبرای وزن سفارشی از گزینهٔ «انتخاب مقدار» استفاده کنید.',
+    'یک جعبهٔ دوازده‌تایی دونات تازه 🍩',
+    1,
+    'kg',
+    450000,
     1,
     0,
     1,
-    0,
     1,
-    0,
     1,
-    150000,
+    50,
+    1,
+    50000,
+    'نمونه: کد تحویل TEST-DONUT-001 — فقط برای امتحان طعم!',
     NULL,
-    1,
-    30,
+    NULL,
     ''
 ),
 (
-    'vip',
-    '🔥 پلن VIP (سرور تانل)',
-    '🔥 پلن VIP (سرور تانل)',
-    '🔥 پلن VIP (سرور تانل)\n📌 سرعت بسیار بالا ⚡️\n📌 بدون قطعی (فقط در موارد نادر مثل آپدیت سرور)\n📌 مناسب کارهای سبک و نیمه‌سنگین\n📌 قابلیت سفارش حجم دلخواه\n📌 پینگ زیر 200 🟢\n✅ دارای ضمانت بازگشت وجه\n💰 قیمت: هر گیگ 800.000 تومان',
-    '🔥 پلن VIP (سرور تانل)\n📌 سرعت خیلی بالا ⚡️\n📌 بدون قطعی (فقط گاهی موقع آپدیت ممکنه قطع بشه)\n📌 مناسب خوردن سبک و نیمه‌سنگین\n📌 قابلیت سفارش وزن دلخواه\n📌 لذت < 100ms 🟢\n\n✅ ضمانت بازگشت وجه داره\n💰 قیمت: 1 کیلو 800.000 تومان',
+    'premium-kilo',
+    '⭐ پریمیوم — هر کیلو',
+    '⭐ دونات پریمیوم (کیلویی)',
+    'دونات‌های دست‌ساز با تاپینگ ویژه.\nقیمت به ازای هر کیلو؛ امکان سفارش وزن دلخواه.',
+    'دونات دست‌ساز ویژه — هر کیلو 🍩✨',
     1,
-    800000,
+    'kg',
+    890000,
     2,
-    0,
     1,
     1,
     1,
-    500,
     1,
-    150000,
-    NULL,
+    20,
+    1,
+    75000,
+    'نمونه طعم: لینک رهگیری نمونه https://example.com/track/demo',
     NULL,
     NULL,
     ''
 ),
 (
-    'vip_plus',
-    '💎 پلن VIP Plus',
-    '💎 پلن VIP Plus',
-    '💎 پلن VIP Plus (حرفه‌ای‌تر از VIP)\n📌 سرعت فوق‌العاده بالا 🚀\n📌 پایدارتر و قوی‌تر از VIP\n📌 مناسب کارهای نیمه‌سنگین و سنگین\n📌 قابلیت سفارش حجم دلخواه\n📌 پینگ زیر 100 🟢\n✅ دارای ضمانت بازگشت وجه\n💰 قیمت: هر گیگ 1.250.000 تومان',
-    '💎 پلن VIP Plus (حرفه‌ای‌تر از VIP)\n📌 سرعت فوق‌العاده بالا 🚀\n📌 خوشمزه‌تر و پایدارتر از VIP\n📌 مناسب خوردن نیمه‌سنگین و سنگین\n📌 قابلیت سفارش وزن دلخواه\n📌 لذت < 100ms 🟢\n\n✅ ضمانت بازگشت وجه داره\n💰 قیمت: 1 کیلو 1.250.000 تومان',
-    1,
-    1250000,
+    'party-box',
+    '🎉 باکس مهمانی',
+    '🎉 باکس مهمانی',
+    'مناسب جشن و جمع‌های کوچک — حدود ۳ کیلو مخلوط طعم‌ها.',
+    'باکس مهمانی — مخلوط طعم‌ها 🎉',
+    3,
+    'kg',
+    2400000,
     3,
     0,
     1,
+    0,
     1,
-    1,
-    500,
-    1,
-    200000,
-    NULL,
-    NULL,
-    NULL,
-    ''
-),
-(
-    'star',
-    '🌟 پلن STAR (استارلینک)',
-    '🌟 پلن ستاره‌ای ✨',
-    '🌟 پلن STAR (استارلینک - نهایت سرعت)\n📌 بالاترین کیفیت و سرعت ممکن 🚀🔥\n📌 مناسب کارهای سنگین، استریم، دانلود حرفه‌ای\n📌 قابلیت سفارش حجم دلخواه\n📌 پینگ زیر 100 🟢\n📌 تمام ویژگی‌های VIP Plus + کیفیت بالاتر\n✅ دارای ضمانت بازگشت وجه\n💰 قیمت: هر گیگ 2.000.000 تومان',
-    '🌟 پلن ستاره‌ای ✨\n📌 بالاترین کیفیت و سرعت 🚀🔥\n📌 مناسب خوردن سنگین، استریم و دانلود حرفه‌ای\n📌 تمام ویژگی‌های VIP Plus + طعم بهتر 😋\n📌 لذت < 100ms 🟢\n\n✅ ضمانت بازگشت وجه داره\n💰 قیمت: 1 کیلو 2.000.000 تومان',
-    1,
-    2000000,
-    4,
-    1,
-    1,
-    1,
-    1,
-    500,
-    1,
-    250000,
+    0,
+    0,
+    0,
     NULL,
     NULL,
     NULL,
@@ -222,17 +205,18 @@ ON DUPLICATE KEY UPDATE
     title_bale = VALUES(title_bale),
     description = VALUES(description),
     description_bale = VALUES(description_bale),
-    gb = VALUES(gb),
+    base_qty = VALUES(base_qty),
+    qty_unit = VALUES(qty_unit),
     price_toman = VALUES(price_toman),
     sort_order = VALUES(sort_order),
     is_featured = VALUES(is_featured),
     is_active = VALUES(is_active),
-    allow_custom_gb = VALUES(allow_custom_gb),
-    gb_min = VALUES(gb_min),
-    gb_max = VALUES(gb_max),
+    allow_custom_qty = VALUES(allow_custom_qty),
+    qty_min = VALUES(qty_min),
+    qty_max = VALUES(qty_max),
     test_enabled = VALUES(test_enabled),
     test_price_toman = VALUES(test_price_toman),
-    test_config_url = VALUES(test_config_url),
+    test_sample_payload = VALUES(test_sample_payload),
     user_limit = VALUES(user_limit),
     duration_days = VALUES(duration_days),
-    config_template = VALUES(config_template);
+    delivery_template = VALUES(delivery_template);

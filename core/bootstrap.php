@@ -72,8 +72,8 @@ if (!isset($messengerApis[$dnPlatform])) {
 
 require_once __DIR__ . '/repo/UserRepository.php';
 require_once __DIR__ . '/repo/StateRepository.php';
-require_once __DIR__ . '/repo/PlanRepository.php';
-require_once __DIR__ . '/repo/PlanConfigRepository.php';
+require_once __DIR__ . '/repo/ProductRepository.php';
+require_once __DIR__ . '/repo/ProductStockRepository.php';
 require_once __DIR__ . '/repo/TopupRepository.php';
 require_once __DIR__ . '/repo/OrderRepository.php';
 require_once __DIR__ . '/repo/ReferralRepository.php';
@@ -82,18 +82,18 @@ require_once __DIR__ . '/BotKernel.php';
 
 $usersRepo = new UserRepository($pdo);
 $orders = new OrderRepository($pdo);
-$planConfigs = new PlanConfigRepository($pdo);
+$productStock = new ProductStockRepository($pdo);
 $referrals = new ReferralRepository($pdo);
-$purchase = new PurchaseService($pdo, $orders, $planConfigs, $usersRepo, $referrals, $dnPlatform, $config, $messengerApis);
+$purchase = new PurchaseService($pdo, $orders, $productStock, $usersRepo, $referrals, $dnPlatform, $config, $messengerApis);
 $kernel = new BotKernel(
     $messengerApis,
     $dnPlatform,
     $usersRepo,
     new StateRepository($pdo),
-    new PlanRepository($pdo),
+    new ProductRepository($pdo),
     new TopupRepository($pdo),
     $orders,
-    $planConfigs,
+    $productStock,
     $purchase,
     $referrals,
     $config,

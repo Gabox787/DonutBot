@@ -54,17 +54,13 @@ return array_replace_recursive(
         'faq_text_key' => 'faq_body',
         /** I18n key for /help, /faq and «راهنما» (content is edited in متن‌های ربات). */
         'help_text_key' => 'help_body',
-        /** Shown in default config URL fragment (#remark) */
-        'bot_brand_name' => 'DonutNetBot',
-        /** PHP timezone for “end of day” test access */
+        /** Appended to delivery URLs as #fragment (order remark) */
+        'bot_brand_name' => 'TG Donut Bot',
+        /** PHP timezone for “end of day” sample-order expiry */
         'timezone' => 'Asia/Tehran',
         /** Plain password for /admin web panel (set in config.local.php) */
         'admin_web_password' => '',
         'log_file' => __DIR__ . '/storage/logs/bot.log',
-        'v2ray_defaults' => [
-            'server' => 'your-server.example.com',
-            'port' => '443',
-        ],
         /** Non-empty to unlock tools/set_commands.php?key=… */
         'commands_setup_key' => '',
     ],

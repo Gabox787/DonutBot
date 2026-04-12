@@ -12,10 +12,10 @@ final class BotKernel
         private string $platform,
         private UserRepository $users,
         private StateRepository $states,
-        private PlanRepository $plans,
+        private ProductRepository $products,
         private TopupRepository $topups,
         private OrderRepository $orders,
-        private PlanConfigRepository $configs,
+        private ProductStockRepository $stock,
         private PurchaseService $purchase,
         private ReferralRepository $referrals,
         /** @var array<string, mixed> */
@@ -90,9 +90,9 @@ final class BotKernel
     /** @return list<array<string, mixed>> */
     private function plansActivePresented(): array
     {
-        $list = $this->plans->listActive();
+        $list = $this->products->listActive();
         if (BotPlatform::isBale($this->platform)) {
-            return PlanRepository::applyBalePresentation($list);
+            return ProductRepository::applyBalePresentation($list);
         }
 
         return $list;
@@ -101,9 +101,9 @@ final class BotKernel
     /** @return array<string, mixed>|null */
     private function planByIdPresented(int $id): ?array
     {
-        $p = $this->plans->getById($id);
+        $p = $this->products->getById($id);
         if (BotPlatform::isBale($this->platform)) {
-            return PlanRepository::applyBalePresentationRow($p);
+            return ProductRepository::applyBalePresentationRow($p);
         }
 
         return $p;
@@ -664,10 +664,11 @@ final class BotKernel
             $this->states->set($this->platform, $telegramId, 'awaiting_gb_buy', ['plan_id' => $planId]);
             $gmin = (string) Util::planGbMin($p);
             $gmax = (string) Util::planGbMax($p);
+            $unit = ProductRepository::unitLabelFa((string) ($p['qty_unit'] ?? 'kg'));
             $this->sendPanel(
                 $telegramId,
                 $chatId,
-                I18n::fmt('buy_ask_gb', ['min' => $gmin, 'max' => $gmax]),
+                I18n::fmt('buy_ask_qty', ['min' => $gmin, 'max' => $gmax, 'unit' => $unit]),
                 [
                     'inline_keyboard' => [
                         [$this->ibt(I18n::txt('btn_back_plans'), 'b')],
@@ -694,13 +695,13 @@ final class BotKernel
             return;
         }
         if (!preg_match('/^\d+$/', $text)) {
-            $this->mx()->sendMessage($chatId, I18n::txt('buy_gb_invalid'), null, 'HTML');
+            $this->mx()->sendMessage($chatId, I18n::txt('buy_qty_invalid'), null, 'HTML');
 
             return;
         }
         $g = (int) $text;
         if ($g < Util::planGbMin($p) || $g > Util::planGbMax($p)) {
-            $this->mx()->sendMessage($chatId, I18n::txt('buy_gb_invalid'), null, 'HTML');
+            $this->mx()->sendMessage($chatId, I18n::txt('buy_qty_invalid'), null, 'HTML');
 
             return;
         }
@@ -722,9 +723,11 @@ final class BotKernel
                 continue;
             }
             $pid = (int) $p['id'];
+            $unit = ProductRepository::unitLabelFa((string) ($p['qty_unit'] ?? 'kg'));
             $label = I18n::fmt('plan_row', [
                 'title' => (string) $p['title'],
-                'gb' => (string) (int) $p['gb'],
+                'qty' => (string) (int) $p['gb'],
+                'unit' => $unit,
                 'price' => Util::formatNumber((int) $p['price_toman']),
             ]);
             $rows[] = [$this->ibt($label, 'tp:' . $pid)];
@@ -1045,15 +1048,17 @@ final class BotKernel
 
     private function renderBuyList(int $telegramId, int $chatId): void
     {
-        $stockSum = Util::formatNumber($this->configs->countAvailableTotal());
+        $stockSum = Util::formatNumber($this->stock->countAvailableTotal());
         $list = $this->plansActivePresented();
         $rows = [];
         foreach ($list as $p) {
             $pid = (int) $p['id'];
+            $unit = ProductRepository::unitLabelFa((string) ($p['qty_unit'] ?? 'kg'));
             $label = I18n::fmt('plan_row', [
                 'title' => (string) $p['title'],
-                'gb' => (string) (int) $p['gb'],
-                'price' => (string) (int) $p['price_toman'],
+                'qty' => (string) (int) $p['gb'],
+                'unit' => $unit,
+                'price' => Util::formatNumber((int) $p['price_toman']),
             ]);
             $rows[] = [$this->ibt($label, 'p:' . $pid)];
         }
@@ -1079,13 +1084,15 @@ final class BotKernel
         if (!empty($p['is_featured'])) {
             $desc = ($desc !== '' ? $desc . "\n\n" : '') . I18n::txt('plan_suggested');
         }
-        $stock = Util::formatNumber($this->configs->countAvailable($planId));
+        $stock = Util::formatNumber($this->stock->countAvailable($planId));
+        $unit = ProductRepository::unitLabelFa((string) ($p['qty_unit'] ?? 'kg'));
         $gbLabel = !empty($p['allow_custom_gb'])
-            ? I18n::fmt('plan_gb_range', [
+            ? I18n::fmt('plan_qty_range', [
                 'min' => (string) Util::planGbMin($p),
                 'max' => (string) Util::planGbMax($p),
+                'unit' => $unit,
             ])
-            : (string) (int) $p['gb'];
+            : ((string) (int) $p['gb'] . ' ' . $unit);
         $uL = Util::planUserLimitDisplay($p);
         $dD = Util::planDurationDaysDisplay($p);
         $usersMeta = $uL === null
@@ -1096,7 +1103,7 @@ final class BotKernel
             : I18n::fmt('plan_days_term', ['n' => (string) $dD]);
         $html = I18n::fmt('plan_detail', [
             'title' => Util::e((string) $p['title']),
-            'gb' => $gbLabel,
+            'qty_line' => $gbLabel,
             'price' => Util::formatNumber((int) $p['price_toman']),
             'stock' => $stock,
             'description' => Util::e($desc),
@@ -1125,11 +1132,12 @@ final class BotKernel
         $balance = (int) ($u['balance_toman'] ?? 0);
         $short = max(0, $price - $balance);
         $effGb = $chosenGb ?? (int) $p['gb'];
+        $unit = ProductRepository::unitLabelFa((string) ($p['qty_unit'] ?? 'kg'));
         $html = I18n::fmt('buy_checkout', [
             'price' => Util::formatNumber($price),
             'balance' => Util::formatNumber($balance),
         ]);
-        $html .= "\n" . I18n::fmt('buy_checkout_gb', ['gb' => (string) $effGb]);
+        $html .= "\n" . I18n::fmt('buy_checkout_qty', ['qty' => (string) $effGb, 'unit' => $unit]);
         if ($balance < $price) {
             $html .= I18n::fmt('buy_insufficient', ['shortage' => Util::formatNumber($short)]);
         }

@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 session_start();
 
+$root = dirname(__DIR__);
+$config = require $root . '/config.php';
+require_once __DIR__ . '/install_helpers.php';
+if (!dn_install_is_complete($config)) {
+    header('Location: install.php');
+    exit;
+}
+
 $app = require __DIR__ . '/init.php';
 require_once dirname(__DIR__) . '/core/BotPlatform.php';
 
@@ -12,8 +20,8 @@ $config = $app['config'];
 $pdo = $app['pdo'];
 $users = $app['users'];
 $orders = $app['orders'];
-$plans = $app['plans'];
-$configs = $app['configs'];
+$products = $app['products'];
+$stock = $app['stock'];
 $topups = $app['topups'];
 $purchase = $app['purchase'];
 /** @var array<string, MessengerApi> $messengerApis */
@@ -21,11 +29,6 @@ $messengerApis = $app['messengerApis'];
 $settingsRepo = $app['settingsRepo'];
 
 $adminPass = (string) ($config['admin_web_password'] ?? '');
-if ($adminPass === '') {
-    http_response_code(503);
-    echo 'Configure admin_web_password in config.local.php';
-    exit;
-}
 
 $p = (string) ($_GET['p'] ?? 'dashboard');
 $msg = '';
@@ -131,7 +134,7 @@ if ($p === 'active_access' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_P
     $custom = trim((string) ($_POST['reason_custom'] ?? ''));
     $reason = $custom !== '' ? $custom : $preset;
     if ($reason === '') {
-        $reason = 'دسترسی سرویس شما توسط مدیریت غیرفعال شد.';
+        $reason = 'این سفارش توسط مدیریت غیرفعال شد.';
     }
     $row = $orders->deactivateAccessWithReason($oid, $reason);
     if ($row === null) {
@@ -166,10 +169,14 @@ if ($p === 'login') {
         }
         $err = 'رمز نادرست است.';
     }
+    $installOk = isset($_GET['installed']) && $_GET['installed'] === '1';
     header('Content-Type: text/html; charset=utf-8');
     echo '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ورود پنل</title><link rel="stylesheet" href="assets/admin.css"></head><body class="login">';
     echo '<form class="card" method="post" action="index.php?p=login">';
-    echo '<h1>DonutNet — پنل وب</h1>';
+    echo '<h1>TG Donut Bot — پنل مدیریت</h1>';
+    if ($installOk) {
+        echo '<p class="hint" style="color:var(--accent2);">نصب کامل شد. با رمزی که تعیین کردید وارد شوید.</p>';
+    }
     if ($err !== '') {
         echo '<p class="err">' . htmlspecialchars($err) . '</p>';
     }
@@ -178,7 +185,7 @@ if ($p === 'login') {
     exit;
 }
 
-if ($p === 'plans' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_plan'])) {
+if ($p === 'products' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_product'])) {
     $slug = trim((string) ($_POST['slug'] ?? ''));
     if ($slug === '') {
         $slug = 'p' . substr(bin2hex(random_bytes(5)), 0, 10);
@@ -189,28 +196,29 @@ if ($p === 'plans' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new
         'title_bale' => (string) ($_POST['title_bale'] ?? ''),
         'description' => (string) ($_POST['description'] ?? ''),
         'description_bale' => (string) ($_POST['description_bale'] ?? ''),
-        'gb' => (int) ($_POST['gb'] ?? 0),
+        'base_qty' => (int) ($_POST['base_qty'] ?? $_POST['gb'] ?? 1),
+        'qty_unit' => trim((string) ($_POST['qty_unit'] ?? 'kg')),
         'price_toman' => (int) ($_POST['price_toman'] ?? 0),
-        'sort_order' => (int) ($_POST['sort_order'] ?? $plans->nextSortOrder()),
+        'sort_order' => (int) ($_POST['sort_order'] ?? $products->nextSortOrder()),
         'is_featured' => !empty($_POST['is_featured']),
         'is_active' => !empty($_POST['is_active']),
-        'allow_custom_gb' => !empty($_POST['allow_custom_gb']),
-        'gb_min' => (int) ($_POST['gb_min'] ?? 1),
-        'gb_max' => (int) ($_POST['gb_max'] ?? 0),
+        'allow_custom_qty' => !empty($_POST['allow_custom_qty']) || !empty($_POST['allow_custom_gb']),
+        'qty_min' => (int) ($_POST['qty_min'] ?? $_POST['gb_min'] ?? 1),
+        'qty_max' => (int) ($_POST['qty_max'] ?? $_POST['gb_max'] ?? 0),
         'test_enabled' => !empty($_POST['test_enabled']),
         'test_price_toman' => (int) ($_POST['test_price_toman'] ?? 0),
-        'test_config_url' => (string) ($_POST['test_config_url'] ?? ''),
+        'test_sample_payload' => (string) ($_POST['test_sample_payload'] ?? $_POST['test_config_url'] ?? ''),
         'user_limit' => (string) ($_POST['user_limit'] ?? ''),
         'duration_days' => (string) ($_POST['duration_days'] ?? ''),
-        'config_template' => (string) ($_POST['config_template'] ?? ''),
+        'delivery_template' => (string) ($_POST['delivery_template'] ?? $_POST['config_template'] ?? ''),
     ];
-    $id = $plans->insertFullFromWeb($row);
-    $msg = 'پلن ایجاد شد — id ' . $id;
-    $p = 'plan';
+    $id = $products->insertFullFromWeb($row);
+    $msg = 'محصول ایجاد شد — id ' . $id;
+    $p = 'product';
     $_GET['id'] = (string) $id;
 }
 
-if ($p === 'plan' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_plan'])) {
+if ($p === 'product' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
     $id = (int) ($_POST['id'] ?? 0);
     if ($id > 0) {
         $row = [
@@ -219,22 +227,23 @@ if ($p === 'plan' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save
             'title_bale' => (string) ($_POST['title_bale'] ?? ''),
             'description' => (string) ($_POST['description'] ?? ''),
             'description_bale' => (string) ($_POST['description_bale'] ?? ''),
-            'gb' => (int) ($_POST['gb'] ?? 0),
+            'base_qty' => (int) ($_POST['base_qty'] ?? $_POST['gb'] ?? 1),
+            'qty_unit' => trim((string) ($_POST['qty_unit'] ?? 'kg')),
             'price_toman' => (int) ($_POST['price_toman'] ?? 0),
             'sort_order' => (int) ($_POST['sort_order'] ?? 0),
             'is_featured' => !empty($_POST['is_featured']),
             'is_active' => !empty($_POST['is_active']),
-            'allow_custom_gb' => !empty($_POST['allow_custom_gb']),
-            'gb_min' => (int) ($_POST['gb_min'] ?? 1),
-            'gb_max' => (int) ($_POST['gb_max'] ?? 0),
+            'allow_custom_qty' => !empty($_POST['allow_custom_qty']) || !empty($_POST['allow_custom_gb']),
+            'qty_min' => (int) ($_POST['qty_min'] ?? $_POST['gb_min'] ?? 1),
+            'qty_max' => (int) ($_POST['qty_max'] ?? $_POST['gb_max'] ?? 0),
             'test_enabled' => !empty($_POST['test_enabled']),
             'test_price_toman' => (int) ($_POST['test_price_toman'] ?? 0),
-            'test_config_url' => (string) ($_POST['test_config_url'] ?? ''),
+            'test_sample_payload' => (string) ($_POST['test_sample_payload'] ?? $_POST['test_config_url'] ?? ''),
             'user_limit' => (string) ($_POST['user_limit'] ?? ''),
             'duration_days' => (string) ($_POST['duration_days'] ?? ''),
-            'config_template' => (string) ($_POST['config_template'] ?? ''),
+            'delivery_template' => (string) ($_POST['delivery_template'] ?? $_POST['config_template'] ?? ''),
         ];
-        if ($plans->saveFullFromWeb($id, $row)) {
+        if ($products->saveFullFromWeb($id, $row)) {
             $msg = 'ذخیره شد.';
         } else {
             $err = 'ذخیره ناموفق.';
@@ -243,18 +252,18 @@ if ($p === 'plan' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save
 }
 
 if ($p === 'inventory' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $planId = (int) ($_POST['plan_id'] ?? 0);
+    $productId = (int) ($_POST['product_id'] ?? $_POST['plan_id'] ?? 0);
     $raw = (string) ($_POST['lines'] ?? '');
     $lines = array_filter(array_map('trim', preg_split('/\R/u', $raw) ?: []));
-    if ($planId <= 0 || $lines === []) {
-        $err = 'پلن و حداقل یک خط لازم است.';
+    if ($productId <= 0 || $lines === []) {
+        $err = 'محصول و حداقل یک خط لازم است.';
     } else {
-        $n = $configs->bulkInsertLines($planId, $lines);
-        $planRow = $plans->getByIdAny($planId);
-        if ($planRow === null) {
-            $planRow = ['id' => $planId, 'title' => '', 'gb' => 0];
+        $n = $stock->bulkInsertLines($productId, $lines);
+        $productRow = $products->getByIdAny($productId);
+        if ($productRow === null) {
+            $productRow = ['id' => $productId, 'title' => '', 'gb' => 1];
         }
-        $fulfilled = $purchase->drainPendingForPlan($planId, $planRow);
+        $fulfilled = $purchase->drainPendingForProduct($productId, $productRow);
         foreach ($fulfilled as $row) {
             $plat = BotPlatform::normalize((string) ($row['platform'] ?? BotPlatform::TELEGRAM));
             $api = $messengerApis[$plat] ?? null;
@@ -293,6 +302,42 @@ if ($logged && $p === 'i18n' && isset($_GET['export'])) {
 }
 
 $stats = $orders->adminStats();
+$chartDays = 14;
+$revByDayRaw = $orders->fulfilledStatsByDay($chartDays);
+$usersByDayRaw = $orders->newUsersByDay($chartDays);
+$topProducts = $orders->topProductsByRevenue(6);
+$userTotal = $users->countAll();
+
+$chartLabels = [];
+$chartRevenue = [];
+$chartOrdersCount = [];
+$chartNewUsers = [];
+for ($i = $chartDays - 1; $i >= 0; --$i) {
+    $d = (new DateTimeImmutable('today'))->modify('-' . $i . ' days')->format('Y-m-d');
+    $chartLabels[] = (new DateTimeImmutable($d))->format('j/n');
+    $chartRevenue[] = 0;
+    $chartOrdersCount[] = 0;
+    $chartNewUsers[] = 0;
+}
+$revMap = [];
+foreach ($revByDayRaw as $row) {
+    $revMap[(string) ($row['d'] ?? '')] = ['revenue' => (int) ($row['revenue'] ?? 0), 'orders' => (int) ($row['orders'] ?? 0)];
+}
+$uMap = [];
+foreach ($usersByDayRaw as $row) {
+    $uMap[(string) ($row['d'] ?? '')] = (int) ($row['c'] ?? 0);
+}
+$startD = (new DateTimeImmutable('today'))->modify('-' . ($chartDays - 1) . ' days');
+for ($i = 0; $i < $chartDays; ++$i) {
+    $d = $startD->modify('+' . $i . ' days')->format('Y-m-d');
+    if (isset($revMap[$d])) {
+        $chartRevenue[$i] = $revMap[$d]['revenue'];
+        $chartOrdersCount[$i] = $revMap[$d]['orders'];
+    }
+    if (isset($uMap[$d])) {
+        $chartNewUsers[$i] = $uMap[$d];
+    }
+}
 
 header('Content-Type: text/html; charset=utf-8');
 
@@ -302,18 +347,20 @@ header('Content-Type: text/html; charset=utf-8');
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>DonutNet پنل</title>
+    <title>TG Donut Bot — پنل</title>
     <link rel="stylesheet" href="assets/admin.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
 <aside class="nav">
-    <div class="brand">DonutNet</div>
+    <div class="brand">TG Donut Bot</div>
+    <span class="nav-tagline">فروش در تلگرام</span>
     <a href="index.php" class="<?php echo $p === 'dashboard' ? 'active' : ''; ?>">داشبورد</a>
-    <a href="index.php?p=plans" class="<?php echo $p === 'plans' || $p === 'plan' ? 'active' : ''; ?>">پلن‌ها</a>
+    <a href="index.php?p=products" class="<?php echo $p === 'products' || $p === 'product' ? 'active' : ''; ?>">محصولات</a>
     <a href="index.php?p=users" class="<?php echo $p === 'users' ? 'active' : ''; ?>">کاربران</a>
     <a href="index.php?p=orders" class="<?php echo $p === 'orders' ? 'active' : ''; ?>">سفارش‌ها</a>
     <a href="index.php?p=active_access" class="<?php echo $p === 'active_access' ? 'active' : ''; ?>">دسترسی فعال</a>
-    <a href="index.php?p=inventory" class="<?php echo $p === 'inventory' ? 'active' : ''; ?>">انبار کانفیگ</a>
+    <a href="index.php?p=inventory" class="<?php echo $p === 'inventory' ? 'active' : ''; ?>">انبار تحویل</a>
     <a href="index.php?p=topups" class="<?php echo $p === 'topups' ? 'active' : ''; ?>">شارژها</a>
     <a href="index.php?p=settings" class="<?php echo $p === 'settings' ? 'active' : ''; ?>">تنظیمات</a>
     <a href="index.php?p=i18n" class="<?php echo $p === 'i18n' ? 'active' : ''; ?>">متن‌های ربات</a>
@@ -334,13 +381,38 @@ if ($p === 'i18n') {
 }
 
 if ($p === 'dashboard') {
-    echo '<h1>داشبورد</h1><div class="grid">';
-    echo '<div class="stat"><span>فروش نهایی</span><strong>' . (int) $stats['orders_fulfilled'] . '</strong></div>';
-    echo '<div class="stat"><span>سفارش باز</span><strong>' . (int) $stats['orders_pending'] . '</strong></div>';
-    echo '<div class="stat"><span>درآمد (تومان)</span><strong>' . number_format((int) $stats['revenue_toman']) . '</strong></div>';
-    echo '<div class="stat"><span>کانفیگ آزاد</span><strong>' . (int) $stats['stock_available'] . '</strong></div>';
+    echo '<div class="dash-header"><h1>داشبورد فروش</h1><p class="dash-sub">خلاصهٔ ' . (int) $chartDays . ' روز اخیر و وضعیت لحظه‌ای</p></div>';
+    echo '<div class="grid grid-stats">';
+    echo '<div class="stat stat--accent"><span>سفارش تکمیل‌شده</span><strong>' . (int) $stats['orders_fulfilled'] . '</strong></div>';
+    echo '<div class="stat"><span>در انتظار تحویل</span><strong>' . (int) $stats['orders_pending'] . '</strong></div>';
+    echo '<div class="stat stat--money"><span>درآمد کل (تومان)</span><strong>' . number_format((int) $stats['revenue_toman']) . '</strong></div>';
+    echo '<div class="stat"><span>ردیف آزاد انبار</span><strong>' . (int) $stats['stock_available'] . '</strong></div>';
+    echo '<div class="stat"><span>کاربران ثبت‌شده</span><strong>' . number_format($userTotal) . '</strong></div>';
     echo '</div>';
-    echo '<p class="hint">وب‌هوک تلگرام: <code dir="ltr">index.php</code> — بله: <code dir="ltr">hook_bale.php</code> (هر دو باید به این هاست اشاره کنند). تأیید رسید و دکمه‌های ادمین هنوز از خود ربات تلگرام/بله می‌آید.</p>';
+    echo '<div class="dash-charts">';
+    echo '<div class="chart-card"><h2>درآمد روزانه (تومان)</h2><canvas id="chartRevenue" height="120"></canvas></div>';
+    echo '<div class="chart-card"><h2>سفارش تکمیل‌شده و کاربر جدید</h2><canvas id="chartOrdersUsers" height="120"></canvas></div>';
+    echo '</div>';
+    if ($topProducts !== []) {
+        echo '<div class="chart-card chart-card--table"><h2>پرفروش‌ترین محصولات</h2><table class="tbl tbl--compact"><thead><tr><th>محصول</th><th>سفارش</th><th>درآمد</th></tr></thead><tbody>';
+        foreach ($topProducts as $tp) {
+            echo '<tr><td>' . Util::e((string) ($tp['title'] ?? '')) . '</td><td>' . (int) ($tp['orders'] ?? 0) . '</td><td>' . number_format((int) ($tp['revenue'] ?? 0)) . '</td></tr>';
+        }
+        echo '</tbody></table></div>';
+    }
+    echo '<p class="hint dash-hint">وب‌هوک تلگرام: <code dir="ltr">index.php</code> — بله: <code dir="ltr">hook_bale.php</code>. شارژ کارت‌به‌کارت و تأیید رسید از طریق خود ربات انجام می‌شود.</p>';
+    $jl = json_encode($chartLabels, JSON_UNESCAPED_UNICODE);
+    $jr = json_encode($chartRevenue, JSON_UNESCAPED_UNICODE);
+    $jo = json_encode($chartOrdersCount, JSON_UNESCAPED_UNICODE);
+    $ju = json_encode($chartNewUsers, JSON_UNESCAPED_UNICODE);
+    echo '<script>(function(){var L=' . $jl . ',R=' . $jr . ',O=' . $jo . ',U=' . $ju . ';';
+    echo 'var gold=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#f4b942";';
+    echo 'var mint=getComputedStyle(document.documentElement).getPropertyValue("--accent2").trim()||"#3ddc97";';
+    echo 'var grid=getComputedStyle(document.documentElement).getPropertyValue("--border").trim()||"#242b38";';
+    echo 'function go(){if(typeof Chart==="undefined")return;';
+    echo 'new Chart(document.getElementById("chartRevenue"),{type:"bar",data:{labels:L,datasets:[{label:"درآمد",data:R,backgroundColor:"rgba(244,185,66,0.35)",borderColor:gold,borderWidth:1}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{x:{grid:{color:grid}},y:{grid:{color:grid},ticks:{callback:function(v){return v.toLocaleString("fa-IR");}}}}}});';
+    echo 'new Chart(document.getElementById("chartOrdersUsers"),{type:"line",data:{labels:L,datasets:[{label:"سفارش",data:O,borderColor:gold,backgroundColor:"rgba(244,185,66,0.1)",tension:0.25,fill:true},{label:"کاربر جدید",data:U,borderColor:mint,backgroundColor:"rgba(61,220,151,0.08)",tension:0.25,fill:true}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"bottom"}},scales:{x:{grid:{color:grid}},y:{grid:{color:grid},beginAtZero:true}}}});';
+    echo '}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",go);else go();})();</script>';
 }
 
 if ($p === 'settings') {
@@ -398,7 +470,7 @@ if ($p === 'settings') {
         echo '<p class="hint">پیش‌فرض عددی در config: <code>10</code> دقیقه در صورت خالی بودن.</p>';
         echo '<label>پشتیبانی پیش‌فرض (هر دو پلتفرم اگر فیلد اختصاصی خالی باشد)<input name="support_username" value="' . $g('support_username', (string) ($config['support_username'] ?? '')) . '"></label>';
         echo '<div class="row2"><label>Timezone<input name="timezone" dir="ltr" value="' . $g('timezone', (string) ($config['timezone'] ?? 'Asia/Tehran')) . '"></label>';
-        echo '<label>نام برند روی کانفیگ<input name="bot_brand_name" value="' . $g('bot_brand_name', (string) ($config['bot_brand_name'] ?? '')) . '"></label></div>';
+        echo '<label>نام برند (یادداشت روی لینک تحویل)<input name="bot_brand_name" value="' . $g('bot_brand_name', (string) ($config['bot_brand_name'] ?? '')) . '"></label></div>';
         echo '<label>درصد پاداش معرفی<input type="text" name="referral_percent_of_sale" inputmode="decimal" value="' . $g('referral_percent_of_sale', (string) ($config['referral_percent_of_sale'] ?? 5)) . '"></label>';
         echo '<label>کلید متن راهنما در فایل زبان (برای <code dir="ltr">/help</code> و دکمه راهنما؛ مثلاً <code dir="ltr">help_body</code>)<input name="help_text_key" dir="ltr" value="' . Util::e($helpKeyDisplay) . '"></label>';
         echo '<p class="hint">متن همان کلید را در صفحهٔ <a href="index.php?p=i18n">متن‌های ربات</a> (تب تلگرام / بله) ویرایش کنید. دستور <code dir="ltr">/faq</code> همان پاسخ را نشان می‌دهد.</p>';
@@ -409,60 +481,64 @@ if ($p === 'settings') {
     echo '<button type="submit">ذخیرهٔ این بخش</button></form>';
 }
 
-if ($p === 'plans') {
-    echo '<h1>پلن‌ها</h1><a class="btn" href="index.php?p=plan&id=0">➕ پلن جدید</a>';
-    echo '<table class="tbl"><thead><tr><th>id</th><th>عنوان</th><th>گیگ</th><th>قیمت</th><th>تست</th><th>فعال</th><th></th></tr></thead><tbody>';
-    foreach ($plans->listAllForWeb() as $pl) {
+if ($p === 'products') {
+    echo '<h1>محصولات</h1><a class="btn" href="index.php?p=product&id=0">➕ محصول جدید</a>';
+    echo '<table class="tbl"><thead><tr><th>id</th><th>عنوان</th><th>مقدار مرجع</th><th>واحد</th><th>قیمت</th><th>تست</th><th>فعال</th><th></th></tr></thead><tbody>';
+    foreach ($products->listAllForWeb() as $pl) {
         echo '<tr>';
         echo '<td>' . (int) $pl['id'] . '</td>';
         echo '<td>' . Util::e((string) $pl['title']) . '</td>';
-        echo '<td>' . (int) $pl['gb'] . '</td>';
+        echo '<td>' . (int) ($pl['base_qty'] ?? $pl['gb'] ?? 1) . '</td>';
+        echo '<td><code dir="ltr">' . Util::e((string) ($pl['qty_unit'] ?? 'kg')) . '</code></td>';
         echo '<td>' . number_format((int) $pl['price_toman']) . '</td>';
         echo '<td>' . (!empty($pl['test_enabled']) ? number_format((int) $pl['test_price_toman']) : '—') . '</td>';
         echo '<td>' . (!empty($pl['is_active']) ? '✓' : '✗') . '</td>';
-        echo '<td><a href="index.php?p=plan&id=' . (int) $pl['id'] . '">ویرایش</a></td>';
+        echo '<td><a href="index.php?p=product&id=' . (int) $pl['id'] . '">ویرایش</a></td>';
         echo '</tr>';
     }
     echo '</tbody></table>';
 }
 
-if ($p === 'plan') {
+if ($p === 'product') {
     $id = (int) ($_GET['id'] ?? 0);
-    $pl = $id > 0 ? $plans->getByIdAny($id) : null;
+    $pl = $id > 0 ? $products->getByIdAny($id) : null;
     $isNew = $pl === null;
-    echo '<h1>' . ($isNew ? 'پلن جدید' : 'ویرایش پلن #' . $id) . '</h1>';
+    echo '<h1>' . ($isNew ? 'محصول جدید' : 'ویرایش محصول #' . $id) . '</h1>';
     echo '<form method="post" class="form">';
     if (!$isNew) {
         echo '<input type="hidden" name="id" value="' . $id . '">';
-        echo '<input type="hidden" name="save_plan" value="1">';
+        echo '<input type="hidden" name="save_product" value="1">';
     } else {
-        echo '<input type="hidden" name="new_plan" value="1">';
+        echo '<input type="hidden" name="new_product" value="1">';
     }
     $f = static fn (string $k, $def = '') => $pl !== null && isset($pl[$k]) ? $pl[$k] : $def;
+    $baseQty = (int) $f('base_qty', $f('gb', 1));
+    $qtyUnit = (string) $f('qty_unit', 'kg');
     echo '<label>slug<input name="slug" value="' . Util::e((string) $f('slug')) . '"></label>';
     echo '<label>عنوان<input name="title" required value="' . Util::e((string) $f('title')) . '"></label>';
-    echo '<label>عنوان نمایش در بله (دونات، اختیاری)<input name="title_bale" value="' . Util::e((string) $f('title_bale')) . '"></label>';
+    echo '<label>عنوان نمایش در بله (اختیاری)<input name="title_bale" value="' . Util::e((string) $f('title_bale')) . '"></label>';
     echo '<label>توضیح<textarea name="description" rows="3">' . Util::e((string) $f('description')) . '</textarea></label>';
-    echo '<label>توضیح بله / دونات<textarea name="description_bale" rows="5" placeholder="متن طعم‌های مزه‌دار برای بله">' . Util::e((string) $f('description_bale')) . '</textarea></label>';
-    echo '<div class="row2"><label>گیگ مرجع<input type="number" name="gb" value="' . (int) $f('gb', 20) . '"></label>';
-    echo '<label>قیمت تومان<input type="number" name="price_toman" value="' . (int) $f('price_toman', 0) . '"></label></div>';
-    echo '<div class="row2"><label>sort<input type="number" name="sort_order" value="' . (int) $f('sort_order', $plans->nextSortOrder()) . '"></label></div>';
+    echo '<label>توضیح بله<textarea name="description_bale" rows="5" placeholder="متن جداگانه برای بله">' . Util::e((string) $f('description_bale')) . '</textarea></label>';
+    echo '<div class="row2"><label>مقدار مرجع (برای قیمت‌گذاری)<input type="number" name="base_qty" min="1" value="' . $baseQty . '"></label>';
+    echo '<label>واحد <span class="hint">پیش‌فرض: kg = کیلو</span><input name="qty_unit" dir="ltr" value="' . Util::e($qtyUnit) . '" placeholder="kg"></label></div>';
+    echo '<label>قیمت به ازای «مقدار مرجع» (تومان)<input type="number" name="price_toman" value="' . (int) $f('price_toman', 0) . '"></label>';
+    echo '<div class="row2"><label>ترتیب نمایش<input type="number" name="sort_order" value="' . (int) $f('sort_order', $products->nextSortOrder()) . '"></label></div>';
     echo '<label class="chk"><input type="checkbox" name="is_active" value="1"' . (!empty($f('is_active', 1)) ? ' checked' : '') . '> فعال</label>';
     echo '<label class="chk"><input type="checkbox" name="is_featured" value="1"' . (!empty($f('is_featured')) ? ' checked' : '') . '> پیشنهادی</label>';
-    echo '<hr><h3>حجم شناور</h3>';
-    echo '<label class="chk"><input type="checkbox" name="allow_custom_gb" value="1"' . (!empty($f('allow_custom_gb')) ? ' checked' : '') . '> کاربر گیگ را انتخاب کند</label>';
-    echo '<div class="row2"><label>حداقل گیگ<input type="number" name="gb_min" value="' . (int) $f('gb_min', 1) . '"></label>';
-    echo '<label>حداکثر گیگ (۰=مرجع از فیلد گیگ)<input type="number" name="gb_max" value="' . (int) $f('gb_max', 0) . '"></label></div>';
-    echo '<hr><h3>سقف پلن (اختیاری)</h3>';
-    echo '<p class="hint">خالی یا 0 یعنی <b>نامحدود</b>. برای «اقتصادی» معمولاً 1 کاربر و 30 روز.</p>';
-    echo '<div class="row2"><label>حداکثر کاربر همزمان (خالی=نامحدود)<input type="number" name="user_limit" min="0" placeholder="مثلاً 1" value="' . Util::e($pl !== null && $pl['user_limit'] !== null && (int) $pl['user_limit'] > 0 ? (string) (int) $pl['user_limit'] : '') . '"></label>';
-    echo '<label>مدت سرویس پس از فعال‌سازی — روز (خالی=نامحدود)<input type="number" name="duration_days" min="0" placeholder="مثلاً 30" value="' . Util::e($pl !== null && $pl['duration_days'] !== null && (int) $pl['duration_days'] > 0 ? (string) (int) $pl['duration_days'] : '') . '"></label></div>';
-    echo '<hr><h3>تست کانفیگ (لینک ثابت)</h3>';
-    echo '<p class="hint">اگر تست فعال است، یک <b>لینک مستقیم vless/vmess</b> بگذارید؛ بدون خط از انبار، بلافاصله بعد از پرداخت به کاربر داده می‌شود.</p>';
+    echo '<hr><h3>مقدار دلخواه توسط مشتری</h3>';
+    echo '<label class="chk"><input type="checkbox" name="allow_custom_qty" value="1"' . (!empty($f('allow_custom_qty')) || !empty($f('allow_custom_gb')) ? ' checked' : '') . '> مشتری مقدار را انتخاب کند (مثلاً چند کیلو)</label>';
+    echo '<div class="row2"><label>حداقل<input type="number" name="qty_min" value="' . (int) $f('qty_min', $f('gb_min', 1)) . '"></label>';
+    echo '<label>حداکثر (۰ = سقف همان مقدار مرجع)<input type="number" name="qty_max" value="' . (int) $f('qty_max', $f('gb_max', 0)) . '"></label></div>';
+    echo '<hr><h3>محدودیت سفارش (اختیاری)</h3>';
+    echo '<p class="hint">برای اشتراک یا سرویس‌های دارای «اسلات»؛ برای فروش ساده خالی بگذارید.</p>';
+    echo '<div class="row2"><label>حداکثر استفاده همزمان (خالی=نامحدود)<input type="number" name="user_limit" min="0" value="' . Util::e($pl !== null && $pl['user_limit'] !== null && (int) $pl['user_limit'] > 0 ? (string) (int) $pl['user_limit'] : '') . '"></label>';
+    echo '<label>مدت اعتبار پس از تحویل — روز (خالی=نامحدود)<input type="number" name="duration_days" min="0" value="' . Util::e($pl !== null && $pl['duration_days'] !== null && (int) $pl['duration_days'] > 0 ? (string) (int) $pl['duration_days'] : '') . '"></label></div>';
+    echo '<hr><h3>خرید آزمایشی</h3>';
+    echo '<p class="hint">متن یا لینک نمونه؛ بدون ردیف انبار، بلافاصله بعد از پرداخت ارسال می‌شود.</p>';
     echo '<label class="chk"><input type="checkbox" name="test_enabled" value="1"' . (!empty($f('test_enabled')) ? ' checked' : '') . '> تست فعال</label>';
     echo '<label>قیمت تست (تومان)<input type="number" name="test_price_toman" value="' . (int) $f('test_price_toman', 0) . '"></label>';
-    echo '<label>URL تست (vless/vmess/…) <input name="test_config_url" dir="ltr" style="text-align:left" value="' . Util::e((string) $f('test_config_url')) . '" placeholder="vless://..."></label>';
-    echo '<label>قالب config فروش عادی (اختیاری)<textarea name="config_template" rows="2">' . Util::e((string) $f('config_template')) . '</textarea></label>';
+    echo '<label>محتوای نمونه / لینک<input name="test_sample_payload" dir="ltr" style="text-align:left" value="' . Util::e((string) $f('test_sample_payload', $f('test_config_url'))) . '" placeholder="https://... یا کد تحویل"></label>';
+    echo '<label>یادداشت داخلی (اختیاری)<textarea name="delivery_template" rows="2">' . Util::e((string) $f('delivery_template', $f('config_template'))) . '</textarea></label>';
     echo '<button type="submit">' . ($isNew ? 'ایجاد' : 'ذخیره') . '</button>';
     echo '</form>';
 }
@@ -482,7 +558,7 @@ if ($p === 'users') {
 }
 
 if ($p === 'orders') {
-    echo '<h1>آخرین سفارش‌ها</h1><table class="tbl"><thead><tr><th>کد</th><th>پلتفرم</th><th>کاربر</th><th>پلن</th><th>مبلغ</th><th>نوع</th><th>وضعیت</th><th>تاریخ</th></tr></thead><tbody>';
+    echo '<h1>آخرین سفارش‌ها</h1><table class="tbl"><thead><tr><th>کد</th><th>پلتفرم</th><th>کاربر</th><th>محصول</th><th>مبلغ</th><th>نوع</th><th>وضعیت</th><th>تاریخ</th></tr></thead><tbody>';
     foreach ($orders->listAllRecent(150) as $o) {
         echo '<tr>';
         echo '<td><code>' . Util::e((string) $o['public_id']) . '</code></td>';
@@ -499,27 +575,27 @@ if ($p === 'orders') {
 }
 
 if ($p === 'inventory') {
-    echo '<h1>افزودن کانفیگ به انبار</h1><form method="post" class="form">';
-    echo '<label>پلن<select name="plan_id" required>';
-    foreach ($plans->listAllForWeb() as $pl) {
+    echo '<h1>افزودن به انبار تحویل</h1><form method="post" class="form">';
+    echo '<label>محصول<select name="product_id" required>';
+    foreach ($products->listAllForWeb() as $pl) {
         echo '<option value="' . (int) $pl['id'] . '">' . Util::e((string) $pl['title']) . ' (#' . (int) $pl['id'] . ')</option>';
     }
     echo '</select></label>';
-    echo '<label>هر خط یک کانفیگ (vless/vmess/…)<textarea name="lines" rows="12" required placeholder="vmess://..."></textarea></label>';
+    echo '<label>هر خط یک «تحویل» (لینک رهگیری، کد باربری، URL فایل، …)<textarea name="lines" rows="12" required placeholder="یک خط = یک واحد موجودی"></textarea></label>';
     echo '<button type="submit">ثبت و تلاش برای تکمیل سفارش‌های معلق</button>';
     echo '</form>';
-    echo '<h2>آخرین ردیف‌های انبار</h2><table class="tbl"><thead><tr><th>id</th><th>پلن</th><th>وضعیت</th><th>payload</th></tr></thead><tbody>';
-    foreach ($configs->listRecentAll(40) as $c) {
+    echo '<h2>آخرین ردیف‌های انبار</h2><table class="tbl"><thead><tr><th>id</th><th>محصول</th><th>وضعیت</th><th>payload</th></tr></thead><tbody>';
+    foreach ($stock->listRecentAll(40) as $c) {
         $pay = mb_substr((string) ($c['payload'] ?? ''), 0, 72);
-        echo '<tr><td>' . (int) $c['id'] . '</td><td>' . Util::e((string) ($c['plan_title'] ?? '')) . '</td>';
+        echo '<tr><td>' . (int) $c['id'] . '</td><td>' . Util::e((string) ($c['product_title'] ?? '')) . '</td>';
         echo '<td>' . Util::e((string) $c['status']) . '</td><td><code>' . Util::e($pay) . '…</code></td></tr>';
     }
     echo '</tbody></table>';
 }
 
 if ($p === 'active_access') {
-    echo '<h1>کانفیگ‌های فعال (استاندارد)</h1>';
-    echo '<p class="hint">سفارش‌های تکمیل‌شده با دسترسی <b>فعال</b>؛ غیرفعال‌سازی دلیل را به کاربر در همان پلتفرم می‌فرستد.</p>';
+    echo '<h1>سفارش‌های فعال (استاندارد)</h1>';
+    echo '<p class="hint">تحویل‌های تکمیل‌شده با وضعیت <b>فعال</b>؛ غیرفعال‌سازی دلیل را به کاربر می‌فرستد.</p>';
     $opts = [
         '' => '— از لیست زیر یا متن دلخواه —',
         'مدت یا حجم سرویس به پایان رسیده است.' => 'پایان مدت / حجم',
@@ -538,7 +614,7 @@ if ($p === 'active_access') {
         $gb = $gbOrd > 0 ? $gbOrd : $gbRef;
         echo '<div class="card" style="margin-bottom:12px">';
         echo '<div><strong>#' . $oid . '</strong> <code>' . $pub . '</code> — ' . $plat . ' — کاربر <code>' . $uid . '</code></div>';
-        echo '<div class="muted">' . $title . ' — گیگ سفارش: ' . ($gb > 0 ? $gb : '—') . '</div>';
+        echo '<div class="muted">' . $title . ' — مقدار سفارش: ' . ($gb > 0 ? $gb : '—') . '</div>';
         echo '<form method="post" class="form" style="margin-top:8px" action="index.php?p=active_access">';
         echo '<input type="hidden" name="deactivate_access" value="1">';
         echo '<input type="hidden" name="order_id" value="' . $oid . '">';

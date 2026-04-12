@@ -645,3 +645,75 @@ code {
 .i18n-save-btn:hover {
     filter: brightness(1.06);
 }
+
+/* —— Dashboard (TG Donut Bot) —— */
+.nav-tagline {
+    font-size: 0.72rem;
+    color: var(--muted);
+    padding: 0 1.25rem 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.dash-header {
+    margin-bottom: 1.5rem;
+}
+
+.dash-header h1 {
+    margin: 0 0 0.35rem;
+    font-size: 1.65rem;
+}
+
+.dash-sub {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+.grid-stats {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+}
+
+.stat--accent strong {
+    color: var(--accent);
+}
+
+.stat--money strong {
+    color: var(--accent2);
+}
+
+.dash-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+    margin: 1.75rem 0;
+}
+
+.chart-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.35rem;
+}
+
+.chart-card h2 {
+    margin: 0 0 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.chart-card--table {
+    margin-top: 0.5rem;
+}
+
+.tbl--compact td,
+.tbl--compact th {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.88rem;
+}
+
+.dash-hint {
+    margin-top: 2rem;
+}

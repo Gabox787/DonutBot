@@ -16,7 +16,7 @@ final class PurchaseService
     public function __construct(
         private \PDO $pdo,
         private OrderRepository $orders,
-        private PlanConfigRepository $configs,
+        private ProductStockRepository $stock,
         private UserRepository $users,
         private ReferralRepository $referrals,
         private string $platform,
@@ -27,7 +27,7 @@ final class PurchaseService
 
     private function brandName(): string
     {
-        return trim((string) ($this->config['bot_brand_name'] ?? 'DonutNetBot'));
+        return trim((string) ($this->config['bot_brand_name'] ?? 'TG Donut Bot'));
     }
 
     private function testExpiryEndOfDay(): string
@@ -137,7 +137,7 @@ final class PurchaseService
                 $gbOrdered,
             );
 
-            $claimed = $this->configs->claimWithinOpenTransaction($this->pdo, $planId, $orderId);
+            $claimed = $this->stock->claimWithinOpenTransaction($this->pdo, $planId, $orderId);
             if ($claimed !== null) {
                 $fin = $this->finalizePayloadForOrder($claimed['payload'], $messengerUserId, $plan, $orderKind);
                 [$svcStart, $svcEnd, $userLim] = $orderKind === 'standard'
@@ -234,13 +234,13 @@ final class PurchaseService
     /**
      * @return list<array{platform: string, user_id: int, public_id: string, payload: string, order_kind: string, test_expires_at: ?string}>
      */
-    public function drainPendingForPlan(int $planId, array $planById): array
+    public function drainPendingForProduct(int $productId, array $productRow): array
     {
         $out = [];
         while (true) {
             $this->pdo->beginTransaction();
             try {
-                $order = $this->orders->lockNextPendingForPlanPdo($this->pdo, $planId);
+                $order = $this->orders->lockNextPendingForProductPdo($this->pdo, $productId);
                 if ($order === null) {
                     $this->pdo->rollBack();
                     break;
@@ -255,13 +255,13 @@ final class PurchaseService
                 $uid = (int) $order['user_id'];
                 $publicId = (string) $order['public_id'];
                 $paid = (int) ($order['price_paid_toman'] ?? 0);
-                $claimed = $this->configs->claimWithinOpenTransaction($this->pdo, $planId, $orderId);
+                $claimed = $this->stock->claimWithinOpenTransaction($this->pdo, $productId, $orderId);
                 if ($claimed === null) {
                     $this->pdo->rollBack();
                     break;
                 }
-                $fin = $this->finalizePayloadForOrderCrossPlatform($claimed['payload'], $plat, $uid, $planById, $orderKind);
-                [$svcStart, $svcEnd, $userLim] = $this->subscriptionFieldsForStandard($planById);
+                $fin = $this->finalizePayloadForOrderCrossPlatform($claimed['payload'], $plat, $uid, $productRow, $orderKind);
+                [$svcStart, $svcEnd, $userLim] = $this->subscriptionFieldsForStandard($productRow);
                 $this->orders->markFulfilledPdo(
                     $this->pdo,
                     $orderId,

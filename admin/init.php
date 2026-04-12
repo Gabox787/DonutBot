@@ -39,8 +39,8 @@ require_once dirname(__DIR__) . '/core/Util.php';
 require_once dirname(__DIR__) . '/core/MessengerApi.php';
 require_once dirname(__DIR__) . '/core/repo/UserRepository.php';
 require_once dirname(__DIR__) . '/core/repo/StateRepository.php';
-require_once dirname(__DIR__) . '/core/repo/PlanRepository.php';
-require_once dirname(__DIR__) . '/core/repo/PlanConfigRepository.php';
+require_once dirname(__DIR__) . '/core/repo/ProductRepository.php';
+require_once dirname(__DIR__) . '/core/repo/ProductStockRepository.php';
 require_once dirname(__DIR__) . '/core/repo/TopupRepository.php';
 require_once dirname(__DIR__) . '/core/repo/OrderRepository.php';
 require_once dirname(__DIR__) . '/core/repo/ReferralRepository.php';
@@ -66,11 +66,11 @@ if ($bTok !== '') {
 
 $users = new UserRepository($pdo);
 $orders = new OrderRepository($pdo);
-$plans = new PlanRepository($pdo);
-$configs = new PlanConfigRepository($pdo);
+$products = new ProductRepository($pdo);
+$stock = new ProductStockRepository($pdo);
 $topups = new TopupRepository($pdo);
 $referrals = new ReferralRepository($pdo);
-$purchase = new PurchaseService($pdo, $orders, $configs, $users, $referrals, BotPlatform::TELEGRAM, $config, $messengerApis);
+$purchase = new PurchaseService($pdo, $orders, $stock, $users, $referrals, BotPlatform::TELEGRAM, $config, $messengerApis);
 
 return [
     'config' => $config,
@@ -78,8 +78,8 @@ return [
     'settingsRepo' => $settingsRepo,
     'users' => $users,
     'orders' => $orders,
-    'plans' => $plans,
-    'configs' => $configs,
+    'products' => $products,
+    'stock' => $stock,
     'topups' => $topups,
     'referrals' => $referrals,
     'purchase' => $purchase,

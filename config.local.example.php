@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 /**
  * Copy to config.local.php and fill in. Do not commit config.local.php.
+ * Or open admin/install.php in the browser: it can create config.local.php (DB only) and set the panel password after you run database.sql.
  */
 return [
     'bot_token' => 'YOUR_BOT_TOKEN',
@@ -34,9 +35,6 @@ return [
     'telegram_bot_username' => 'YourBotUserName',
     'referral_percent_of_sale' => 5,
     'admin_web_password' => 'change-this-strong-password',
-    'v2ray_defaults' => [
-        'server' => 'vpn.example.com',
-        'port' => '443',
-    ],
+    'bot_brand_name' => 'TG Donut Bot',
     'commands_setup_key' => 'change-me-long-random-string',
 ];
