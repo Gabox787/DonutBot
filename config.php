@@ -9,8 +9,8 @@ return array_replace_recursive(
     [
         'bot_token' => '8324336049:AAEx9BtfH9fnWziTQ1IPb7kKRsJQvhftZy8',
         /** Bale bot token (optional; can be set only in DB admin settings). */
-        'bale_bot_token' => '715162339',
-        'admin_telegram_ids' => [],
+        'bale_bot_token' => '',
+        'admin_telegram_ids' => [715162339],
         /** Admin user IDs on Bale (optional). */
         'admin_bale_ids' => [],
         'telegram_api_base' => 'https://api.telegram.org',
