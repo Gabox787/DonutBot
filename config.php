@@ -3,68 +3,46 @@
 declare(strict_types=1);
 
 /**
- * Base config — override with config.local.php (copy from config.local.example.php).
+ * Base config — edited for Mac Mini M4 local setup.
  */
-return array_replace_recursive(
-    [
-        'bot_token' => '8618099968:AAE_-JdQI4y3qoGbxHgSM-iDRukeQn1uUQY',
-        /** Bale bot token (optional; can be set only in DB admin settings). */
-        'bale_bot_token' => '',
-        'admin_telegram_ids' => [715162339],
-        /** Admin user IDs on Bale (optional). */
-        'admin_bale_ids' => [],
-        'telegram_api_base' => 'https://api.telegram.org',
-        'bale_api_base' => 'https://tapi.bale.ai',
-        'db' => [
-            'host' => '127.0.0.1',
-            'name' => 'donut_bot',
-            'user' => 'root',
-            'pass' => '',
-            'charset' => 'utf8mb4',
-        ],
-        'locale' => 'en',
-        /** Language file for Bale (donut-themed copy in lang/fa_bale.php). */
-        'locale_bale' => 'fa_bale',
-        'payment' => [
-            'card_number' => '',
-            'card_holder' => '',
-            'pay_window_minutes' => 10,
-        ],
-        'support_username' => '',
-        /** Optional @username for support text; falls back to support_username. */
-        'support_username_telegram' => '',
-        'support_username_bale' => '',
-        /** Telegram @username of channel users must join (no @ prefix ok). Empty = no gate. */
-        'required_channel_username' => '',
-        /** Bale channel @username for membership gate (separate from Telegram). */
-        'required_channel_username_bale' => '',
-        /** Full URLs for “join channel” button if t.me links are wrong on Bale. */
-        'channel_join_url_telegram' => '',
-        'channel_join_url_bale' => '',
-        /** Placeholders: {id} messenger user id, {bot} username */
-        'referral_link_template_telegram' => '',
-        'referral_link_template_bale' => '',
-        /** Bot username without @ — used for referral links https://t.me/{username}?start=ref_{id} */
-        'telegram_bot_username' => '',
-        /** Bale bot username without @ (default referral link uses ble.ir); optional if referral_link_template_bale is set */
-        'bale_bot_username' => '',
-        /** Percent of referred user's standard purchase (floor) credited to referrer wallet */
-        'referral_percent_of_sale' => 5,
-        /** Legacy; used only if help_text_key is empty (config.local or old DB). */
-        'faq_text_key' => 'faq_body',
-        /** I18n key for /help, /faq and «راهنما» (content is edited in متن‌های ربات). */
-        'help_text_key' => 'help_body',
-        /** Appended to delivery URLs as #fragment (order remark) */
-        'bot_brand_name' => 'My Paper Trading Bot',
-        /** PHP timezone for “end of day” sample-order expiry */
-        'timezone' => 'Europe/Kyiv',
-        /** Plain password for /admin web panel (set in config.local.php) */
-        'admin_web_password' => 'admin123',
-        'log_file' => __DIR__ . '/storage/logs/bot.log',
-        /** Non-empty to unlock tools/set_commands.php?key=… */
-        'commands_setup_key' => 'setup123',
+return [
+    'bot_token' => '8618099968:AAE_-JdQI4y3qoGbxHgSM-iDRukeQn1uUQY',
+    'bale_bot_token' => '',
+    'admin_telegram_ids' => [715162339],
+    'admin_bale_ids' => [],
+    'telegram_api_base' => 'https://api.telegram.org',
+    'bale_api_base' => 'https://tapi.bale.ai',
+    'db' => [
+        'host' => '127.0.0.1', // Принудительно используем IP для Mac
+        'name' => 'donut_bot',
+        'user' => 'root',
+        'pass' => '',
+        'charset' => 'utf8mb4',
     ],
-    file_exists(__DIR__ . '/config.local.php')
-        ? require __DIR__ . '/config.local.php'
-        : []
-);
+    'locale' => 'en',
+    'locale_bale' => 'fa_bale',
+    'payment' => [
+        'card_number' => '',
+        'card_holder' => '',
+        'pay_window_minutes' => 10,
+    ],
+    'support_username' => '',
+    'support_username_telegram' => '',
+    'support_username_bale' => '',
+    'required_channel_username' => '',
+    'required_channel_username_bale' => '',
+    'channel_join_url_telegram' => '',
+    'channel_join_url_bale' => '',
+    'referral_link_template_telegram' => '',
+    'referral_link_template_bale' => '',
+    'telegram_bot_username' => '',
+    'bale_bot_username' => '',
+    'referral_percent_of_sale' => 5,
+    'faq_text_key' => 'faq_body',
+    'help_text_key' => 'help_body',
+    'bot_brand_name' => 'My Paper Trading Bot',
+    'timezone' => 'Europe/Kyiv',
+    'admin_web_password' => 'admin123',
+    'log_file' => __DIR__ . '/storage/logs/bot.log',
+    'commands_setup_key' => 'setup123',
+];
