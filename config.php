@@ -16,9 +16,9 @@ return array_replace_recursive(
         'telegram_api_base' => 'https://api.telegram.org',
         'bale_api_base' => 'https://tapi.bale.ai',
         'db' => [
-            'host' => 'localhost',
-            'name' => '',
-            'user' => '',
+            'host' => '127.0.0.1',
+            'name' => 'donut_bot',
+            'user' => 'root',
             'pass' => '',
             'charset' => 'utf8mb4',
         ],
@@ -59,10 +59,10 @@ return array_replace_recursive(
         /** PHP timezone for “end of day” sample-order expiry */
         'timezone' => 'Europe/Kyiv',
         /** Plain password for /admin web panel (set in config.local.php) */
-        'admin_web_password' => '',
+        'admin_web_password' => 'admin123',
         'log_file' => __DIR__ . '/storage/logs/bot.log',
         /** Non-empty to unlock tools/set_commands.php?key=… */
-        'commands_setup_key' => '',
+        'commands_setup_key' => 'setup123',
     ],
     file_exists(__DIR__ . '/config.local.php')
         ? require __DIR__ . '/config.local.php'
