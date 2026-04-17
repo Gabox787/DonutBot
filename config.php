@@ -7,7 +7,7 @@ declare(strict_types=1);
  */
 return array_replace_recursive(
     [
-        'bot_token' => '8324336049:AAEx9BtfH9fnWziTQ1IPb7kKRsJQvhftZy8',
+        'bot_token' => '8618099968:AAE_-JdQI4y3qoGbxHgSM-iDRukeQn1uUQY',
         /** Bale bot token (optional; can be set only in DB admin settings). */
         'bale_bot_token' => '',
         'admin_telegram_ids' => [715162339],
