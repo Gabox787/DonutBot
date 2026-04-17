@@ -57,7 +57,7 @@ return array_replace_recursive(
         /** Appended to delivery URLs as #fragment (order remark) */
         'bot_brand_name' => 'TG Donut Bot',
         /** PHP timezone for “end of day” sample-order expiry */
-        'timezone' => 'Asia/Tehran',
+        'timezone' => 'Europe/Kyiv',
         /** Plain password for /admin web panel (set in config.local.php) */
         'admin_web_password' => '',
         'log_file' => __DIR__ . '/storage/logs/bot.log',
