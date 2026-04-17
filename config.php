@@ -55,7 +55,7 @@ return array_replace_recursive(
         /** I18n key for /help, /faq and «راهنما» (content is edited in متن‌های ربات). */
         'help_text_key' => 'help_body',
         /** Appended to delivery URLs as #fragment (order remark) */
-        'bot_brand_name' => 'TG Donut Bot',
+        'bot_brand_name' => 'My Paper Trading Bot',
         /** PHP timezone for “end of day” sample-order expiry */
         'timezone' => 'Europe/Kyiv',
         /** Plain password for /admin web panel (set in config.local.php) */
