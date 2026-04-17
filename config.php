@@ -22,7 +22,7 @@ return array_replace_recursive(
             'pass' => '',
             'charset' => 'utf8mb4',
         ],
-        'locale' => 'fa',
+        'locale' => 'en',
         /** Language file for Bale (donut-themed copy in lang/fa_bale.php). */
         'locale_bale' => 'fa_bale',
         'payment' => [
